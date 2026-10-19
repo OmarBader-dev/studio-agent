@@ -423,11 +423,48 @@ class PipelineTests(unittest.TestCase):
             pipeline.publish.is_live = lambda url, tries=6, wait=10: False     # its page still doesn't open
             try:
                 self.assertEqual(pipeline.outreach(cfg, store)["drafted"], 1)
+                # The next run drafts the new sample instead of stopping at the ones already drafted.
+                store.add({"id": "ov:3", "name": "Bean & Co", "email": "owner@bean.co", "status": "ready", "state": "OH",
+                           "sample_url": "https://x/s/v/", "post_count": 3, "domain": "bean.co"})
+                self.assertEqual(pipeline.outreach(cfg, store)["drafted"], 1)
             finally:
                 pipeline.publish.is_live = saved_live
-            self.assertEqual(len(list(pipeline.OUTBOX.glob("*.txt"))), 1)
+            self.assertEqual(len(list(pipeline.OUTBOX.glob("*.txt"))), 2)
         finally:
             pipeline.OUTBOX = saved
+
+    def test_email_pace_warms_up_and_samples_follow_it(self):
+        cfg, store = cfg_for_tests(), temp_store()
+        ago = lambda days: iso(dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days))
+        self.assertEqual(pipeline.email_allowance(cfg, store), 10)               # nothing sent yet
+        store.flag("first_email_at", ago(8))
+        self.assertEqual(pipeline.email_allowance(cfg, store), 15)               # a week later: +5
+        store.flag("first_email_at", ago(40))
+        self.assertEqual(pipeline.email_allowance(cfg, store), 15)               # never above max_emails_per_day
+        for i in range(20):
+            store.add({"id": f"sent:{i}", "status": "emailed", "first_sent_at": ago(2)})
+        store.leads["sent:0"]["status"] = "bounced"
+        self.assertEqual(pipeline.email_allowance(cfg, store), 15)               # 1 in 20 bounced: fine
+        store.leads["sent:1"]["status"] = "bounced"
+        self.assertEqual(pipeline.email_allowance(cfg, store), 10)               # more: back to the starting pace
+
+        cfg2, store2 = cfg_for_tests(), temp_store()
+        cfg2["targets"].update(cities=["Columbus, OH"], niches=["cafe"])
+        cfg2["limits"].update(dm_handover_per_day=0)
+        for i in range(4):                                                       # still waiting for their email
+            store2.add({"id": f"wait:{i}", "status": "ready", "email": f"hi@wait{i}.com", "sample_url": "https://x/s/w/"})
+        store2.add({"id": "old", "status": "ready", "email": "hi@old.com", "sample_url": "https://x/s/o/",
+                    "created_at": ago(5)})                                       # too old to send: doesn't count
+        cands = [{"id": f"ov:{i}", "name": f"Cafe {i}", "niche": "cafe", "category": "cafe", "city": "Columbus",
+                  "state": "OH", "chain": False, "website": f"https://cafe{i}.com", "emails": [f"hi@cafe{i}.com"],
+                  "socials": []} for i in range(12)]
+        fake = lambda c, s, r, cand, radar_for, root, posts_n=3, force=False: dict(cand, status="ready",
+                                                                                   email=cand["emails"][0])
+        with patched((pipeline.prospect, "search", lambda s, city, niches: cands), (pipeline, "make_sample", fake),
+                     (pipeline.trends, "radar", lambda *a, **k: {"calendar": [], "live": [], "weather": []})):
+            made = pipeline.prospect_today(cfg2, store2, None, None)
+        self.assertEqual(len(made), 6)                                           # today's 10, less the 4 waiting
+        self.assertEqual([l["id"] for l in pipeline.email_queue(cfg2, store2)][:4], [f"wait:{i}" for i in range(4)])
 
     def test_skipped_businesses_are_replaced_and_cities_take_turns(self):
         cfg, store = cfg_for_tests(), temp_store()

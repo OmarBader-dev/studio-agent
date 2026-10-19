@@ -17,12 +17,13 @@ const HOURS = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => from
 const JOBS = [
   // The website agent: send windows for the East Coast, Central/Mountain and West Coast.
   { repo: "lead-agent", workflow: "Lead agent", command: "daily", minute: 7, hours: [14, 17, 20], weekdays: true },
-  // Replies, every hour from 05:00 to 21:00 UTC (morning to midnight in Beirut).
-  { repo: "lead-agent", workflow: "Lead agent", command: "inbox", minute: 13, hours: HOURS(5, 21) },
+  // Replies, every 3 hours from 06:13 to 21:13 UTC (morning to around midnight in Beirut), to save GitHub minutes
+  // for the studio agent. For every hour again, use hours: HOURS(5, 21).
+  { repo: "lead-agent", workflow: "Lead agent", command: "inbox", minute: 13, hours: [6, 9, 12, 15, 18, 21] },
 
   // The security agent: two send windows on weekdays, and replies plus the links you share with its bot.
   { repo: "security-agent", workflow: "Security agent", command: "daily", minute: 7, hours: [13, 16], weekdays: true },
-  { repo: "security-agent", workflow: "Security agent", command: "inbox", minute: 13, hours: HOURS(5, 21) },
+  { repo: "security-agent", workflow: "Security agent", command: "inbox", minute: 13, hours: [6, 9, 12, 15, 18, 21] },
 
   // The studio agent (social media + design): samples and emails on weekdays at 14:37 UTC, and its inbox
   // (your Telegram commands, replies, client requests) at 06:37, 10:37 and 19:37 UTC (9:37, 13:37, 22:37 Beirut).

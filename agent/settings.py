@@ -124,9 +124,10 @@ def _defaults(cfg):
     t.setdefault("niches", ["restaurant", "cafe", "bakery", "gym", "beauty", "shop"])
     t["niches"] = [n for n in t["niches"] if n in NICHES]
     lim = cfg["limits"]
-    for key, value in (("new_prospects_per_day", 15), ("new_emails_per_day", 10), ("followups_per_day", 20),
+    for key, value in (("new_prospects_per_day", 15), ("new_emails_per_day", 10), ("email_ramp_per_week", 5),
+                       ("max_emails_per_day", 15), ("followups_per_day", 30),
                        ("dm_handover_per_day", 8), ("send_hours", [9, 16]), ("followup_days", [3, 7]),
-                       ("sample_days", 30), ("prospect_minutes", 12), ("ai_calls_per_day", 150),
+                       ("sample_days", 30), ("prospect_minutes", 15), ("ai_calls_per_day", 150),
                        ("ai_images_per_day", 40), ("sample_reels_per_day", 6)):
         lim.setdefault(key, value)
     p = cfg["pages"]

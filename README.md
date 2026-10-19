@@ -74,7 +74,7 @@ Set `autopilot.clients: false` to check everything yourself first, or `review_fi
 
 | What | Free service | Notes |
 |---|---|---|
-| Running it | GitHub Actions | Free and unlimited in a **public** repo (see "Minutes" below) |
+| Running it | GitHub Actions | 2,000 free minutes a month for private repos, unlimited for public ones (see "Minutes") |
 | Pages | Cloudflare Pages | Your existing free account |
 | Writing | Gemini, Groq, Cloudflare Workers AI, OpenRouter | Free tiers, no card. Works with any one of them |
 | Abstract backgrounds | Cloudflare Workers AI | 10,000 free "neurons" a day, about 170 images |
@@ -83,7 +83,7 @@ Set `autopilot.clients: false` to check everything yourself first, or `review_fi
 | Trends | Google Trends, Bluesky, Nager.Date, Open-Meteo | No keys |
 | Fonts and icons | Google Fonts | Open licenses |
 | Videos (Reels) | the same headless browser + ffmpeg | Built in; no music added (pick a free trending sound in Instagram) |
-| Email | Gmail | ~10 a day to start |
+| Email | Gmail | 10 new businesses a day the first week, then 15 (plus up to 8 a day for you to DM) |
 
 With no AI key at all it still works, using built-in templates (plainer writing).
 
@@ -145,8 +145,9 @@ then Deploy:
   { repo: "studio-agent", workflow: "Studio agent", command: "inbox", minute: 37, hours: [6, 10, 19] },
 ```
 
-and change the Worker's Cron Trigger to `7,13,37 * * * *` (the updated worker.js next to this README already has
-these lines). Also tick the new repository in the Worker's
+and change the Worker's Cron Trigger to `7,13,37 * * * *`. The `worker.js` in this repository already has these
+lines, and checks your other agents' replies every 3 hours instead of every hour to make room in your free minutes
+(see "Minutes"), so you can paste it whole. Also tick the new repository in the Worker's
 GitHub token (Only select repositories), or `/check` will show a 404 for it.
 
 With a public repository (unlimited minutes) you can check the inbox every hour instead, so the bot answers your
@@ -209,19 +210,22 @@ Maps, send its website to the bot, then send them the DM it gives you.
 
 ## Minutes
 
-GitHub gives private repositories 2,000 free minutes a month, shared by all your repositories. Your
-lead agent and security agent already use most of that with their hourly reply checks. Two ways to fit:
+GitHub gives private repositories 2,000 free minutes a month, shared by all your repositories. When they run
+out, GitHub stops every agent until the next month starts. See how much is used at GitHub → Settings →
+Billing and licensing.
 
-- **Recommended: make `studio-agent` a public repository.** Public repositories run free without limit.
-  Add the secret `STATE_KEY` (make one by running
-  `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`, or ask me)
-  and the agent stores its memory encrypted, so the businesses and clients in it stay private. Logs only show
-  counts and business names, never emails. Client photos they email you are kept in the run cache, never in
-  the public files. Keep Settings → Actions → General → "Require approval for all outside collaborators"
-  on, and never approve workflow runs on pull requests from strangers. Decide before the first run: a private
-  repository made public later still has its old, readable memory in its history.
-- Or keep it private, set `new_prospects_per_day: 8`, and lower the other agents' reply checks to every two
-  hours in the Worker (`hours: [5, 7, 9, 11, 13, 15, 17, 19, 21]`), which saves ~480 minutes a month.
+This repository is private, so the Worker checks your website and security agents' replies every 3 hours
+instead of every hour, which saves about 660 minutes a month. That pays for this agent: its weekday daily
+run (about 20 to 25 minutes) and 3 short inbox checks a day. If a month gets close to the limit anyway:
+lower `prospect_minutes` and `max_emails_per_day` here, or check this agent's inbox twice a day in the Worker.
+
+A public repository runs free without limit. Add the secret `STATE_KEY` (make one by running
+`python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`, or ask me)
+and the agent stores its memory encrypted, so the businesses and clients in it stay private. Logs only show
+counts and business names, never emails. Client photos they email you are kept in the run cache, never in
+the public files. Keep Settings → Actions → General → "Require approval for all outside collaborators"
+on, and never approve workflow runs on pull requests from strangers. Decide before the first run: a private
+repository made public later still has its old, readable memory in its history.
 
 ## Rules it follows
 

@@ -153,7 +153,9 @@ def prospect_today(cfg, store, renderer, site_root):
     """Find today's businesses and make their samples. Returns the new leads (not yet published)."""
     lim = cfg["limits"]
     deadline = time.time() + lim["prospect_minutes"] * 60
-    want = max(0, lim["new_prospects_per_day"] - store.usage("prospects", period="day"))
+    # Only as many samples as can be emailed today (minus any still waiting), so none go stale or waste minutes.
+    pace = min(lim["new_prospects_per_day"], email_allowance(cfg, store))
+    want = max(0, pace - store.usage("prospects", period="day") - len(email_queue(cfg, store)))
     manual = max(0, lim["dm_handover_per_day"] - store.usage("manual_samples", period="day"))
     radars = {}
 
@@ -211,6 +213,36 @@ def recheck(store):
             lead.pop("unverified", None)
 
 
+FRESH_DAYS = 3      # a sample's first email goes out within this many days, while the dates on its posts are current
+
+
+def email_allowance(cfg, store):
+    """First emails allowed today. A new Gmail starts at limits.new_emails_per_day and goes up by
+    limits.email_ramp_per_week each week after the first email, to limits.max_emails_per_day. If more than 1 in 20
+    of the last two weeks' emails bounced, it goes back to the starting pace until that settles."""
+    lim = cfg["limits"]
+    start = lim["new_emails_per_day"]
+    began = parse(store.flag("first_email_at"))
+    if not began:
+        return start
+    recent = [l for l in store.leads.values() if l.get("first_sent_at") and (now() - parse(l["first_sent_at"])).days < 14]
+    if recent and 20 * sum(l.get("status") == "bounced" for l in recent) > len(recent):
+        return start
+    weeks = (now() - began).days // 7
+    return max(start, min(lim["max_emails_per_day"], start + lim["email_ramp_per_week"] * weeks))
+
+
+def email_queue(cfg, store):
+    """Samples waiting for their first email, oldest first. Only ones made in the last FRESH_DAYS days (older ones
+    would arrive with past dates on their posts), and in draft mode only ones without a draft yet."""
+    def fresh(lead):
+        made = parse(lead.get("created_at"))
+        return bool(made) and (now() - made).days < FRESH_DAYS
+    queue = [l for l in store.with_status("ready") if l.get("email") and l.get("sample_url", "").startswith("http")
+             and not store.is_suppressed(l["email"]) and fresh(l) and (cfg.live or not l.get("drafted"))]
+    return sorted(queue, key=lambda l: l.get("created_at", ""))
+
+
 def write_drafts(cfg, store, leads):
     OUTBOX.mkdir(parents=True, exist_ok=True)
     n = 0
@@ -245,14 +277,13 @@ def outreach(cfg, store):
     """Send due follow-ups, then first emails, within daily caps and each business's own working hours."""
     lim = cfg["limits"]
     recheck(store)
-    first_due = [l for l in store.with_status("ready") if l.get("email") and l.get("sample_url", "").startswith("http")
-                 and not l.get("unverified") and not store.is_suppressed(l["email"])]
-    first_due.sort(key=lambda l: l.get("created_at", ""))
+    first_due = [l for l in email_queue(cfg, store) if not l.get("unverified")]
+    pace = email_allowance(cfg, store)
     if not cfg.live:
-        return {"drafted": write_drafts(cfg, store, first_due[: lim["new_emails_per_day"]]), "first": 0, "followups": 0}
+        return {"drafted": write_drafts(cfg, store, first_due[:pace]), "first": 0, "followups": 0}
     counts = {"drafted": 0, "first": 0, "followups": 0}
     fu_left = lim["followups_per_day"] - store.usage("emails_fu", period="day")
-    new_left = lim["new_emails_per_day"] - store.usage("emails_new", period="day")
+    new_left = pace - store.usage("emails_new", period="day")
     hours = lim["send_hours"]
     batch = ([("fu", l) for l in _due_followups(cfg, store) if geo.in_send_window(l.get("state"), hours)][:max(fu_left, 0)]
              + [("first", l) for l in first_due if geo.in_send_window(l.get("state"), hours)][:max(new_left, 0)])
@@ -274,6 +305,8 @@ def outreach(cfg, store):
                 store.update(lead["id"], status="emailed", touches=1, subject=email.subject, thread_id=msgid,
                              first_sent_at=iso(), last_sent_at=iso())
                 store.add_usage("emails_new", period="day")
+                if not store.flag("first_email_at"):
+                    store.flag("first_email_at", iso())          # the warm-up pace counts weeks from here
                 counts["first"] += 1
                 store.log(lead["id"], "sent:first", email.subject)
             store.record_sent(msgid, lead["id"])
@@ -365,7 +398,8 @@ def digest(cfg, store, contacts=0, clients_line=""):
     made = sum(1 for e in events if e["kind"] == "added" and e["detail"].startswith(("ready", "manual")))
     lines = [f"<b>Studio agent · {dt.date.today():%b %d}</b>",
              f"Businesses checked: {store.usage('prospects_checked', period='day')} · Samples made: {made}",
-             f"Emails sent: {count('sent:first')} · Follow-ups: {count('sent:fu')}",
+             f"Emails sent: {count('sent:first')} (pace: {email_allowance(cfg, store)} a day) · "
+             f"Follow-ups: {count('sent:fu')}",
              f"Replies: {count('reply:reply') + count('reply:later')} · Opt-outs: {count('reply:optout') + count('reply:remove')} · "
              f"Bounces: {count('bounced')}",
              f"Free AI used today: {store.usage('ai_calls', period='day')} requests · "

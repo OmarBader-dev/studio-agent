@@ -25,9 +25,13 @@ targets:
   niches: ["restaurant", "cafe", "bakery", "gym", "beauty", "shop"]
 
 limits:
-  new_prospects_per_day: 15           # businesses checked and given a free sample per day
-  new_emails_per_day: 10              # first emails per day. Start low and raise slowly to protect your Gmail
-  followups_per_day: 20
+  new_prospects_per_day: 15           # most businesses given a free sample per day (never more than it can email)
+  # A new Gmail is warmed up slowly: first emails start at new_emails_per_day and go up by email_ramp_per_week
+  # each week after the first one is sent, to max_emails_per_day. If more than 1 in 20 bounce, back to the start.
+  new_emails_per_day: 10
+  email_ramp_per_week: 5
+  max_emails_per_day: 15
+  followups_per_day: 30               # each business gets up to 2 follow-ups, so about twice the first emails
   dm_handover_per_day: 8              # businesses with no email, sent to you on Telegram with a message to copy
   send_hours: [9, 16]                 # only send between these hours, in the business's own time zone
   followup_days: [3, 7]               # follow-ups go out this many days after the first email
@@ -35,7 +39,7 @@ limits:
   ai_calls_per_day: 150               # stay well inside the free AI tiers
   ai_images_per_day: 40               # AI backgrounds per day (Cloudflare's free tier allows about 170)
   sample_reels_per_day: 6             # free samples that also get a short Reel video (each takes ~30 s)
-  prospect_minutes: 12                # time the daily run spends making samples (a run may last 30 minutes)
+  prospect_minutes: 15                # time the daily run spends making samples (a run may last 30 minutes)
 
 pages:
   cloudflare_project: "omarbader-studio"   # Cloudflare Pages project for sample pages and client packs
