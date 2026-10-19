@@ -1,0 +1,74 @@
+# Studio agent settings: a social media agent and a graphic design agent for local businesses.
+# Passwords and API keys never go in this file. They go in GitHub secrets (or a local .env file).
+
+you:
+  name: "Omar Bader"
+  business: "Omar Bader Studio"       # shown on sample pages and under your name in emails
+  email: ""                           # the Gmail account the agent sends from and reads replies in
+  mailing_address: "Saroulla Bldg, 11th floor, Hamra Main Street, Beirut, Lebanon"   # REQUIRED by US anti-spam law
+  website: ""                         # optional
+  instagram: ""                       # optional: your own Instagram, shown on sample pages
+
+offer:
+  # Each agent is its own plan; a client gets the other agent's work only with the bundle.
+  social_monthly: 99                  # Social: weekly posts, stories, a Reel and a Google post, posting, monthly report
+  design_monthly: 49                  # Design: designs on request (flyers, promos, menus, price lists, schedules), PDFs
+  bundle_monthly: 129                 # Social + Design: both agents
+  posts_per_week: 3                   # what the social plan includes
+  designs_per_month: 8                # what the design plan includes (you're told when a client goes over)
+  trial: "the first week free"        # shown in emails and on sample pages; "" to leave it out
+
+targets:
+  # Cities to find businesses in (US cities, written like "Columbus, OH"). Email outreach is US-only.
+  cities: ["Columbus, OH", "Indianapolis, IN", "Charlotte, NC", "Kansas City, MO"]
+  # Kinds of businesses: restaurant, cafe, bakery, gym, beauty, shop, bar, pets
+  niches: ["restaurant", "cafe", "bakery", "gym", "beauty", "shop"]
+
+limits:
+  new_prospects_per_day: 15           # businesses checked and given a free sample per day
+  new_emails_per_day: 10              # first emails per day. Start low and raise slowly to protect your Gmail
+  followups_per_day: 20
+  dm_handover_per_day: 8              # businesses with no email, sent to you on Telegram with a message to copy
+  send_hours: [9, 16]                 # only send between these hours, in the business's own time zone
+  followup_days: [3, 7]               # follow-ups go out this many days after the first email
+  sample_days: 30                     # sample pages are deleted after this many days
+  ai_calls_per_day: 150               # stay well inside the free AI tiers
+  ai_images_per_day: 40               # AI backgrounds per day (Cloudflare's free tier allows about 170)
+  sample_reels_per_day: 6             # free samples that also get a short Reel video (each takes ~30 s)
+  prospect_minutes: 12                # time the daily run spends making samples (a run may last 30 minutes)
+
+pages:
+  cloudflare_project: "omarbader-studio"   # Cloudflare Pages project for sample pages and client packs
+  base_url: ""                        # leave "" to use https://<project>.pages.dev
+
+ai:
+  # Free providers, tried in this order. Each one is used only if its key is set in GitHub secrets.
+  providers: ["gemini", "groq", "cloudflare", "openrouter"]
+  keyless_fallback: false             # true: also use Pollinations (no key, community-run) when the others are out
+
+images:
+  ai_backgrounds: true                # Cloudflare Workers AI makes abstract backgrounds (never fake food or products)
+  stock_photos: true                  # Pexels (free key) or Openverse (no key) when a business has no photos
+
+trends:
+  country: "US"
+  avoid: []                           # extra words to keep out of posts, like ["election", "crypto"]
+
+posting:
+  meta: "auto"                        # posts approved content (pictures, Reels, stories) to clients' Facebook and
+                                      # Instagram once the META_ACCESS_TOKEN secret is set (see README); false = never
+
+# Autopilot: how much the agents do without you.
+autopilot:
+  clients: true                       # weekly posts and designs go straight to clients after the agent's own checks
+                                      # (anything that fails a check comes to you). false = you approve everything
+  replies: true                       # businesses that reply interested get the plans and prices automatically
+  posters: 2                          # posters a month the design agent makes on its own for each Design client
+  revisions: 3                        # rounds of changes a client can ask for by email before it comes to you
+
+# "draft": finds businesses, makes their samples and writes the emails into data/outbox, but sends nothing.
+# "live": sends emails and follow-ups for real. Switch once you've checked a few drafts.
+mode: "draft"
+
+# "card": a personal email with a small preview of the sample designs. "plain": text only.
+email_style: "card"

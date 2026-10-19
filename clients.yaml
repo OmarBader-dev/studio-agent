@@ -1,0 +1,29 @@
+# Your paying clients. Add one when they've paid (copy the example below, remove the # signs, fill it in).
+# Photos they email you are saved and used automatically. You can also add photos yourself in
+# clients/<their-name>/photos/ (for example clients/maple-street-coffee/photos/).
+
+clients: []
+
+# - name: "Maple Street Coffee"          # (an example, not a real business)
+#   website: "https://www.example.com"
+#   email: "owner@example.com"             # weekly posts go here; their replies approve posts or ask for designs
+#   contact_name: "Sam"
+#   niche: "cafe"                          # restaurant, cafe, bakery, gym, beauty, shop, bar, pets
+#   city: "Columbus, OH"
+#   plan: "bundle"                         # social (posts only), design (designs only) or bundle (both)
+#   designs_per_month: 8                   # optional: a different design allowance for this client
+#   posts_per_week: 3
+#   content_day: "thursday"                # the day next week's posts are made
+#   review_first: true                     # you check them on Telegram first (/approve maple sends them)
+#   auto_approve: true                     # no reply by the day before = approved
+#   stories: true                          # also make story versions of two posts
+#   reels: true                            # and a short video (Reel/TikTok) of the first post
+#   google_posts: true                     # and a post for their Google Business Profile
+#   offerings: ["Whole bean coffee", "Gift subscriptions", "Cold brew"]   # what they sell (helps the writing)
+#   notes: "Family-owned roaster since 2015. Never mention discounts."   # rules for every post
+#   brand:                                 # optional: override what the website shows
+#     colors: {primary: "#454120", accent: "#d97755"}
+#     fonts: {heading: "Bebas Neue", body: "Asul"}
+#     logo: "clients/maple-street-coffee/logo.png"
+#   meta_page_id: ""                       # optional: post for them automatically (see the README)
+#   meta_ig_id: ""
