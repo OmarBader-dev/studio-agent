@@ -861,6 +861,62 @@ class StockPhotoTests(unittest.TestCase):
         self.assertEqual((calls[0][1]["orientation"], calls[0][1]["image_type"]), ("vertical", "photo"))
 
 
+class CheckTests(unittest.TestCase):
+    def test_check_reports_without_any_keys(self):
+        from agent import check
+        sent = []
+        with patched((check, "telegram", lambda cfg, text: sent.append(text) or True)):
+            results = dict(check.run(cfg_for_tests(), temp_store()))
+        self.assertIsNone(results["Pixabay"][0])                                  # no key: skipped, not failed
+        self.assertFalse(results["AI"][0])                                        # no AI at all is worth knowing
+        self.assertIn("Studio agent check", sent[0])
+        self.assertIn("draft", sent[0])
+
+    def test_pixabay_check_searches_and_downloads_a_photo(self):
+        from agent import check
+        cfg, sent, asked = cfg_for_tests(), [], []
+        photo = pathlib.Path(tempfile.mkdtemp()) / "leaves.jpg"
+        photo.write_bytes(b"x" * 4096)
+
+        class Resp:
+            status_code = 200
+
+            def json(self):
+                return {"total": 900, "totalHits": 500, "hits": [{"largeImageURL": "https://pixabay.com/get/a.jpg"}]}
+
+        def get(url, **kw):
+            asked.append(url)
+            return Resp()
+
+        os.environ["PIXABAY_API_KEY"] = "k"
+        try:
+            with patched((check.requests, "get", get), (check, "telegram", lambda cfg, text: sent.append(text) or True),
+                         (check.web, "download", lambda url, folder: photo if url.endswith("a.jpg") else None)):
+                results = dict(check.run(cfg, temp_store()))
+        finally:
+            os.environ.pop("PIXABAY_API_KEY", None)
+        self.assertEqual(results["Pixabay"], (True, '500 photos found for "autumn leaves", one downloaded (4 KB)'))
+        self.assertIsNone(results["Pexels"][0])
+        self.assertIn("https://pixabay.com/api/", asked)
+        self.assertIn("✅ <b>Pixabay</b>", sent[0])
+
+    def test_ai_check_explains_a_refused_key_and_wakes_a_fixed_one(self):
+        from agent import check
+        cfg, store = cfg_for_tests(), temp_store()
+        os.environ["GROQ_API_KEY"] = "k"
+        try:
+            def refused(*a):
+                raise ai.NoAI("groq: 401 Invalid API Key")
+            with patched((check.ai, "_call", refused)):
+                self.assertEqual(check.ai_provider(cfg, store, "groq"), (False, "the key was refused: copy it again"))
+            store.flag("ai_rest", {"groq": 9e12, "gemini": 9e12})       # resting after that refusal
+            with patched((check.ai, "_call", lambda *a: ("ready", "groq:llama-3.3-70b-versatile"))):
+                self.assertEqual(check.ai_provider(cfg, store, "groq"), (True, "llama-3.3-70b-versatile answered"))
+        finally:
+            os.environ.pop("GROQ_API_KEY", None)
+        self.assertEqual(store.flag("ai_rest"), {"gemini": 9e12})        # used again right away, others untouched
+
+
 class PublicRepoTests(unittest.TestCase):
     def test_telegram_id_isnt_printed_in_a_public_repository(self):
         import contextlib

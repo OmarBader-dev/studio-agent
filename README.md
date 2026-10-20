@@ -133,11 +133,13 @@ Set `you.email` to the studio Gmail, check your mailing address (US law requires
 cities, the kinds of businesses, and your prices. Commit.
 
 ### 7. Try it (still in draft mode)
-1. **Run workflow → trends** (target: `Columbus, OH`): the log lists what's worth posting about this week.
-2. **Run workflow → sample** (target: any business website). Telegram sends you its sample page and a DM to copy.
-3. Send your bot `/kit https://some-cafe.com` and `/trends`.
-4. **Run workflow → daily**. Telegram shows the summary, one draft email, and the businesses to DM.
-5. When you like the drafts, set `mode: "live"`.
+1. **Run workflow → check**: it tests every key you've added (Gmail, AI, photos, Cloudflare, HQ) and sends
+   you a ✅/❌ report on Telegram.
+2. **Run workflow → trends** (target: `Columbus, OH`): the log lists what's worth posting about this week.
+3. **Run workflow → sample** (target: any business website). Telegram sends you its sample page and a DM to copy.
+4. Send your bot `/kit https://some-cafe.com` and `/trends`.
+5. **Run workflow → daily**. Telegram shows the summary, one draft email, and the businesses to DM.
+6. When you like the drafts, set `mode: "live"`.
 
 ### 8. Run it on schedule
 Add these lines to `JOBS` in your agent-scheduler Worker (Cloudflare → Workers → agent-scheduler → Edit code),

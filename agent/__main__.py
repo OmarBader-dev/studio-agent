@@ -12,13 +12,14 @@
   status         counts of businesses by status
   test-email     send yourself the first email exactly as a business would get it
   telegram-id    print your Telegram chat ID (message your bot first)
+  check          test every key you've added (Gmail, AI, photos, Cloudflare, HQ) and report on Telegram
 """
 import collections
 import re
 import shutil
 import sys
 
-from . import clients, commands, design, hq, inbox, mailer, meta, notify, packs, pipeline, publish, settings, trends
+from . import check, clients, commands, design, hq, inbox, mailer, meta, notify, packs, pipeline, publish, settings, trends
 from .notify import esc, telegram
 from .settings import SITE
 from .store import Store, now
@@ -52,11 +53,11 @@ def publish_site(cfg, store, root, leads, weeks):
         store.flag("pages_host", {"project": cfg["pages"]["cloudflare_project"], "host": host})
     for lead in leads:
         lead["sample_url"] = f"{dep['url']}/s/{lead['token']}/"
-    check = leads[0]["sample_url"] if leads else None
-    if check and not publish.is_live(check):
+    first = leads[0]["sample_url"] if leads else None
+    if first and not publish.is_live(first):
         for lead in leads:                               # emailed only once their page is seen to open
             lead["unverified"] = True
-        telegram(cfg, f"Pages were published but {esc(check)} doesn't open yet, so those businesses wait until "
+        telegram(cfg, f"Pages were published but {esc(first)} doesn't open yet, so those businesses wait until "
                       "it does (checked again on every run).")
     return dep["url"]
 
@@ -234,9 +235,13 @@ def cmd_telegram_id(cfg, store):
             print(f"TELEGRAM_CHAT_ID={chat_id}   ({name})")
 
 
+def cmd_check(cfg, store):
+    check.run(cfg, store)
+
+
 COMMANDS = {"daily": cmd_daily, "inbox": cmd_inbox, "contacts": cmd_contacts, "sample": cmd_sample, "kit": cmd_kit,
             "design": cmd_design, "week": cmd_week, "trends": cmd_trends, "status": cmd_status,
-            "test-email": cmd_test_email, "telegram-id": cmd_telegram_id}
+            "test-email": cmd_test_email, "telegram-id": cmd_telegram_id, "check": cmd_check}
 
 
 def main(argv):

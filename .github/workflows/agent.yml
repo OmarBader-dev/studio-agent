@@ -10,7 +10,7 @@ on:
         description: "What to run"
         type: choice
         default: daily
-        options: [daily, inbox, contacts, sample, kit, design, week, trends, status, test-email, telegram-id]
+        options: [daily, inbox, contacts, sample, kit, design, week, trends, status, test-email, telegram-id, check]
       target:
         description: "For sample/kit: a website. For design/week: the client's name. For trends: a city."
         type: string
