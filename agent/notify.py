@@ -54,6 +54,12 @@ def telegram(cfg, text):
                                               "disable_web_page_preview": True}) is not None
 
 
+def send_to(cfg, chat_id, text):
+    """A message to a given chat (before TELEGRAM_CHAT_ID is set, e.g. to tell you what it is)."""
+    token = cfg.secret("TELEGRAM_BOT_TOKEN")
+    return bool(token) and _call(token, "sendMessage", json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"}) is not None
+
+
 def photo(cfg, path, caption=""):
     """Send one picture (a design) with a short HTML caption."""
     token, chat = _creds(cfg)

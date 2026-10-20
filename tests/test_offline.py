@@ -831,6 +831,26 @@ class HQTests(unittest.TestCase):
             os.environ.pop("HQ_TOKEN", None)
 
 
+class PublicRepoTests(unittest.TestCase):
+    def test_telegram_id_isnt_printed_in_a_public_repository(self):
+        import contextlib
+        import io
+        from agent import __main__ as cli
+        sent, cfg, store = [], cfg_for_tests(), temp_store()          # (cfg_for_tests clears STATE_KEY)
+        os.environ["STATE_KEY"] = "x" * 43 + "="
+        out = io.StringIO()
+        try:
+            with patched((cli.notify, "chat_ids", lambda cfg: {5365750000: "Omar"}),
+                         (cli.notify, "send_to", lambda cfg, chat, text: sent.append((chat, text)) or True)), \
+                    contextlib.redirect_stdout(out):
+                cli.cmd_telegram_id(cfg, store)
+        finally:
+            os.environ.pop("STATE_KEY", None)
+        self.assertNotIn("5365750000", out.getvalue())
+        self.assertEqual(sent[0][0], 5365750000)
+        self.assertIn("5365750000", sent[0][1])
+
+
 class StoreTests(unittest.TestCase):
     def test_encrypted_state_for_public_repos(self):
         from cryptography.fernet import Fernet

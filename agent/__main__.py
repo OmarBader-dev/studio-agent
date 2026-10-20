@@ -226,7 +226,12 @@ def cmd_telegram_id(cfg, store):
     if not found:
         print("No messages yet. Open your bot in Telegram, send it any message, then run this again.")
     for chat_id, name in found.items():
-        print(f"TELEGRAM_CHAT_ID={chat_id}   ({name})")
+        if settings.public_repo():                  # anyone can read a public repository's logs
+            notify.send_to(cfg, chat_id, f"Your TELEGRAM_CHAT_ID is <code>{chat_id}</code>. Add it as a secret in "
+                                         "the studio-agent repository (Settings → Secrets and variables → Actions).")
+            print("Your chat ID was sent to you on Telegram (it isn't printed here because this repository is public).")
+        else:
+            print(f"TELEGRAM_CHAT_ID={chat_id}   ({name})")
 
 
 COMMANDS = {"daily": cmd_daily, "inbox": cmd_inbox, "contacts": cmd_contacts, "sample": cmd_sample, "kit": cmd_kit,
