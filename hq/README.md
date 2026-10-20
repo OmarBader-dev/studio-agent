@@ -32,8 +32,9 @@ for the number and 1.3 cents a minute, so 100 two-minute calls cost about $4.
 1. **Cloudflare token.** The `CLOUDFLARE_API_TOKEN` secret in this repository needs these permissions, on top of
    Cloudflare Pages · Edit and Workers AI · Edit: **Workers Scripts · Edit**, **D1 · Edit** and
    **Account Settings · Read**. Cloudflare → My Profile → API Tokens → your token → Edit (no need for a new one).
-2. **Put HQ online.** GitHub → studio-agent → Actions → **HQ** → Run workflow. The end of the log shows your HQ
-   address, like `https://studio-hq.your-name.workers.dev`. Bookmark it, or add it to your phone's home screen.
+2. **Put HQ online.** GitHub → studio-agent → Actions → **HQ** → Run workflow. Your HQ address, like
+   `https://studio-hq.your-name.workers.dev`, is in Cloudflare → Workers & Pages → studio-hq (a private repository
+   also prints it at the end of the log). Bookmark it, or add it to your phone's home screen.
 3. **Your password.** Cloudflare → Workers & Pages → **studio-hq** → Settings → Variables and Secrets → Add →
    type **Secret**, name `HQ_PASSWORD`, a long password only you know. Open your HQ address and log in.
 4. **Connect the agents.** HQ → Settings shows two values, `HQ_URL` and `HQ_TOKEN`. Add both as secrets in each

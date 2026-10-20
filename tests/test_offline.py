@@ -278,8 +278,8 @@ class ProspectTests(unittest.TestCase):
     def test_emails_must_belong_to_the_business(self):
         self.assertTrue(prospect.email_belongs("info@joespizza.com", "https://www.joespizza.com", "Joe's Pizza"))
         self.assertTrue(prospect.email_belongs("joespizza614@gmail.com", "", "Joe's Pizza"))
-        self.assertFalse(prospect.email_belongs("stories@nbc4i.com", "http://sanmargherita.webs.com", "San Margherita"))
-        self.assertFalse(prospect.email_belongs("dave@glassworksplus.com", "http://balancedyoga.net", "Balanced Yoga"))
+        self.assertFalse(prospect.email_belongs("stories@tvstation-news.com", "http://trattoria-rossa.webs.com", "Trattoria Rossa"))
+        self.assertFalse(prospect.email_belongs("sam@glassrepairpros.com", "http://sunrise-yoga.net", "Sunrise Yoga"))
         self.assertEqual(prospect.own_site("https://booksy.com/en-us/123"), "")
         self.assertEqual(prospect.own_site("www.florin.com"), "https://www.florin.com")
 

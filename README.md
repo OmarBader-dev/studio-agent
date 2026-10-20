@@ -102,7 +102,7 @@ message **@BotFather** → `/newbot` → copy the token. Send your new bot any m
 - **Gemini**: aistudio.google.com/apikey → Create API key.
 - **Groq**: console.groq.com/keys → Create API Key.
 - **OpenRouter** (optional): openrouter.ai/keys.
-- **Pexels** (optional, theme photos): pexels.com/api → your key.
+- **Pexels** (optional): Pexels has paused new API keys. You don't need one: without it the agent uses the business's own photos and free Openverse photos.
 
 ### 4. A Cloudflare token
 dash.cloudflare.com → My Profile → API Tokens → Create Token → Custom token with:
@@ -124,7 +124,7 @@ variables → Actions → New repository secret, for each:
 | `TELEGRAM_CHAT_ID` | run **Actions → Studio agent → Run workflow → telegram-id** after adding the token, and copy the number from the log |
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | from step 4 |
 | `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `PEXELS_API_KEY` | from step 3 (any you have) |
-| `STATE_KEY` | only for a public repository, see "Minutes" |
+| `STATE_KEY` | encrypts the agent's memory so the repository can be public: see "Minutes" |
 
 ### 6. config.yaml
 Set `you.email` to the studio Gmail, check your mailing address (US law requires it in sales emails), your
@@ -220,22 +220,25 @@ bought can have its service started straight away. Setup and details: [hq/README
 
 ## Minutes
 
-GitHub gives private repositories 2,000 free minutes a month, shared by all your repositories. When they run
-out, GitHub stops every agent until the next month starts. See how much is used at GitHub → Settings →
-Billing and licensing.
+GitHub gives private repositories 2,000 free minutes a month, shared by all your repositories (when they run
+out, every private agent stops until the next month). Public repositories run free without limit, so this
+agent is meant to live in a **public** repository, with its memory encrypted:
 
-This repository is private, so the Worker checks your website and security agents' replies every 3 hours
-instead of every hour, which saves about 660 minutes a month. That pays for this agent: its weekday daily
-run (about 20 to 25 minutes) and 3 short inbox checks a day. If a month gets close to the limit anyway:
-lower `prospect_minutes` and `max_emails_per_day` here, or check this agent's inbox twice a day in the Worker.
+1. **Make a STATE_KEY.** On your computer, open any browser tab, press F12, open the Console, paste this line
+   and press Enter:
+   `btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))).replace(/\+/g,'-').replace(/\//g,'_')`
+   It shows a random 44-character key (or run
+   `python -c "import base64,os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"`).
+2. **Save it twice:** as the secret `STATE_KEY` in this repository (Settings → Secrets and variables →
+   Actions), and in your password manager. Without it the agent can't read its own memory; with a different
+   key, runs stop instead of starting over and emailing businesses twice.
+3. **Then make the repository public:** Settings → General → Danger Zone → Change visibility.
+4. Settings → Actions → General → "Fork pull request workflows from outside collaborators": choose
+   **Require approval for all outside collaborators**, and never approve runs on pull requests from strangers.
 
-A public repository runs free without limit. Add the secret `STATE_KEY` (make one by running
-`python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`, or ask me)
-and the agent stores its memory encrypted, so the businesses and clients in it stay private. Logs only show
-counts and business names, never emails. Client photos they email you are kept in the run cache, never in
-the public files. Keep Settings → Actions → General → "Require approval for all outside collaborators"
-on, and never approve workflow runs on pull requests from strangers. Decide before the first run: a private
-repository made public later still has its old, readable memory in its history.
+In a public repository the agent only ever saves `data/state.enc` (encrypted). Logs show counts and business
+names, never emails; client photos they email you stay in the run cache; HQ's address isn't printed. If
+`STATE_KEY` is missing in a public repository, the workflow stops before running and saves nothing.
 
 ## Rules it follows
 

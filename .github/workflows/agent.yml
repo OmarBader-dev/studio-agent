@@ -47,6 +47,17 @@ jobs:
           fi
           echo "APP=$(dirname "$(dirname "$main")")" >> "$GITHUB_ENV"
 
+      # A public repository must keep the agent's memory encrypted: without STATE_KEY nothing runs or is saved.
+      - name: Check the memory key (public repository)
+        if: github.event.repository.visibility == 'public'
+        env:
+          STATE_KEY: ${{ secrets.STATE_KEY }}
+        run: |
+          if [ -z "$STATE_KEY" ]; then
+            echo "::error::This repository is public, so the agent's memory must be encrypted. Add the STATE_KEY secret first (README, Minutes)."
+            exit 1
+          fi
+
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -95,6 +106,7 @@ jobs:
         if: always() && env.APP != ''
         env:
           STATE_KEY: ${{ secrets.STATE_KEY }}
+          VISIBILITY: ${{ github.event.repository.visibility }}
         run: |
           cd "$APP"
           git config user.name "studio-agent"
@@ -102,6 +114,9 @@ jobs:
           if [ -n "$STATE_KEY" ]; then
             # Public repository: only the encrypted state is saved.
             git add data/state.enc 2>/dev/null || true
+          elif [ "$VISIBILITY" = "public" ]; then
+            echo "::error::Public repository without STATE_KEY: nothing saved, so nothing private is published."
+            exit 1
           else
             for path in data/state.json data/outbox clients; do
               if [ -e "$path" ]; then git add "$path"; fi
