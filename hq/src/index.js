@@ -679,7 +679,7 @@ async function settingsView(env, url) {
     url: url.origin, token: await agentToken(env), agents, counts,
     twilio: { secrets: !!(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN), connected: !!twilio.app_sid,
               number: twilio.number || null, connected_at: twilio.at || null },
-    telegram: !!(env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID),
+    telegram: !!(botToken(env) && chatId(env)),
     digest_hour: (await getSetting(env, "digest_hour")) ?? 20, name: (await getSetting(env, "name")) || "",
   });
 }
@@ -694,20 +694,35 @@ async function saveSettings(env, body) {
 }
 
 // Telegram ---------------------------------------------------------------------------------------------------
+// Forgiving about how the secrets were pasted: spaces around them, a "bot" in front of the token, or the chat ID
+// copied together with the name next to it ("5365752518 (Omar)").
+const botToken = (env) => String(env.TELEGRAM_BOT_TOKEN || "").trim().replace(/^bot(?=\d+:)/i, "");
+const chatId = (env) => (String(env.TELEGRAM_CHAT_ID || "").match(/-?\d{5,}/) || [""])[0];
+
+function telegramReason(status, body) {
+  let d = "";
+  try { d = JSON.parse(body).description || ""; } catch { d = body.slice(0, 120); }
+  if (status === 401 || status === 404) return "Telegram doesn't recognise the bot token. Copy it again from @BotFather (/mybots → your bot → API Token), with nothing before or after it.";
+  if (/initiate conversation|blocked by the user|deactivated/i.test(d)) return "The bot isn't allowed to message you yet: open your bot in Telegram and press Start, then try again.";
+  if (/chat not found/i.test(d)) return "Telegram can't find that chat: check TELEGRAM_CHAT_ID (just the number), and press Start in your bot.";
+  return `Telegram said: ${d || "error " + status}`;
+}
+
 async function telegram(env, text) {
-  if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return false;
-  const r = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+  const token = botToken(env), chat = chatId(env);
+  if (!token || !chat) return { ok: false, why: "Add TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID to this Worker's secrets first." };
+  const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: env.TELEGRAM_CHAT_ID, text: text.slice(0, 4000), parse_mode: "HTML",
-                           disable_web_page_preview: true }),
+    body: JSON.stringify({ chat_id: chat, text: text.slice(0, 4000), parse_mode: "HTML", disable_web_page_preview: true }),
   });
-  if (!r.ok) console.log("telegram", r.status, (await r.text()).slice(0, 200));
-  return r.ok;
+  if (r.ok) return { ok: true };
+  const body = await r.text();
+  console.log("telegram", r.status, body.slice(0, 200));
+  return { ok: false, why: telegramReason(r.status, body) };
 }
 async function telegramTest(env, url) {
-  if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return json({ error: "Add TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID to this Worker's secrets first." }, 400);
-  const ok = await telegram(env, `HQ is connected. Your daily call list comes here. <a href="${html(url.origin)}/">Open HQ</a>`);
-  return ok ? json({ ok: true }) : json({ error: "Telegram didn't accept it. Check the bot token and chat ID." }, 502);
+  const sent = await telegram(env, `HQ is connected. Your daily call list comes here. <a href="${html(url.origin)}/">Open HQ</a>`);
+  return sent.ok ? json({ ok: true }) : json({ error: sent.why }, 502);
 }
 
 async function digestText(env, at = Date.now()) {
@@ -930,4 +945,4 @@ async function recording(env, sid) {
 }
 
 // For tests.
-export const _test = { e164, addCycle, callWindow, agentEvent, cleanRecord, plansFor, usCallable, digestText, hourly, twilioValid };
+export const _test = { telegramReason, botToken, chatId, e164, addCycle, callWindow, agentEvent, cleanRecord, plansFor, usCallable, digestText, hourly, twilioValid };
