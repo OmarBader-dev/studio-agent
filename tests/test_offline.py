@@ -908,13 +908,33 @@ class CheckTests(unittest.TestCase):
             def refused(*a):
                 raise ai.NoAI("groq: 401 Invalid API Key")
             with patched((check.ai, "_call", refused)):
-                self.assertEqual(check.ai_provider(cfg, store, "groq"), (False, "the key was refused: copy it again"))
+                self.assertEqual(check.ai_provider(cfg, store, "groq"), (False, "the key was refused: copy it again (HTTP 401)"))
             store.flag("ai_rest", {"groq": 9e12, "gemini": 9e12})       # resting after that refusal
             with patched((check.ai, "_call", lambda *a: ("ready", "groq:llama-3.3-70b-versatile"))):
                 self.assertEqual(check.ai_provider(cfg, store, "groq"), (True, "llama-3.3-70b-versatile answered"))
         finally:
             os.environ.pop("GROQ_API_KEY", None)
         self.assertEqual(store.flag("ai_rest"), {"gemini": 9e12})        # used again right away, others untouched
+
+    def test_check_log_shows_only_the_status_of_a_failure(self):
+        from agent import check
+        import contextlib
+        import io
+        cfg, out = cfg_for_tests(), io.StringIO()
+        os.environ["OPENROUTER_API_KEY"] = "k"
+        try:
+            def policy(*a):
+                raise ai.NoAI('openrouter: 404 {"error":{"message":"No endpoints found matching your data policy '
+                              '(Free model training). Configure: https://openrouter.ai/settings/privacy","code":404}}')
+            with patched((check.ai, "_call", policy), (check, "telegram", lambda cfg, text: True)), \
+                    contextlib.redirect_stdout(out):
+                results = dict(check.run(cfg, temp_store()))
+        finally:
+            os.environ.pop("OPENROUTER_API_KEY", None)
+        self.assertEqual(results["OpenRouter"][0], False)
+        self.assertIn("openrouter.ai/settings/privacy", results["OpenRouter"][1])
+        self.assertIn("OpenRouter: FAILED (HTTP 404)\n", out.getvalue())
+        self.assertNotIn("data policy", out.getvalue())                      # the error text stays on Telegram
 
 
 class PublicRepoTests(unittest.TestCase):

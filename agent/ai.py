@@ -34,8 +34,9 @@ POLLINATIONS = "https://text.pollinations.ai/openai"
 GROQ_PREFER = ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "moonshotai/kimi-k2-instruct",
                "meta-llama/llama-4-maverick-17b-128e-instruct", "qwen/qwen3-32b", "openai/gpt-oss-20b",
                "llama-3.1-8b-instant"]
-OPENROUTER_PREFER = ["openai/gpt-oss-120b:free", "meta-llama/llama-3.3-70b-instruct:free", "deepseek/deepseek-chat-v3-0324:free",
-                     "google/gemma-3-27b-it:free", "qwen/qwen3-235b-a22b:free", "mistralai/mistral-small-3.2-24b-instruct:free"]
+OPENROUTER_PREFER = ["google/gemma-4-31b-it:free", "nvidia/nemotron-3-super-120b-a12b:free",    # free list, Oct 2026
+                     "minimax/minimax-m3.1-flash:free", "google/gemma-4-26b-a4b-it:free",
+                     "openai/gpt-oss-120b:free", "meta-llama/llama-3.3-70b-instruct:free", "qwen/qwen3-235b-a22b:free"]
 CF_TEXT = ["@cf/meta/llama-3.3-70b-instruct-fp8-fast", "@cf/meta/llama-3.1-8b-instruct-fp8-fast"]
 CF_VISION = "@cf/meta/llama-3.2-11b-vision-instruct"
 
@@ -122,6 +123,9 @@ def _openai_style(url, key, model, system, prompt, max_tokens, temperature, json
     if "gpt-oss" in (model or "") or model == "openai":
         body["reasoning_effort"] = "low"                   # reasoning models: keep the budget for the answer
         body["max_tokens"] = max_tokens + 2500
+    elif url.startswith(OPENROUTER):                       # its free models all think before answering: briefly
+        body["reasoning"] = {"effort": "low"}
+        body["max_tokens"] = max_tokens + 1500
     if json_mode:
         body["response_format"] = {"type": "json_object"}
     h = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"} if key else {"Content-Type": "application/json"}

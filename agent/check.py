@@ -1,5 +1,6 @@
 """python -m agent check: tests every service the studio agent uses, with the keys you've added, and sends you the
-result on Telegram. The log only shows ok / failed / skipped per service, so it's safe in a public repository."""
+result on Telegram. The log only shows ok / skipped / FAILED (with the HTTP status) per service, so it's safe in a
+public repository."""
 import imaplib
 import os
 import re
@@ -41,16 +42,22 @@ def ai_provider(cfg, store, provider):
         found = f"{model.split(':', 1)[-1]} answered"
     except ai.NoAI as e:
         text = str(e)
+        m = re.match(r"\w+: (\d{3}) ", text)
+        code = f" (HTTP {m[1]})" if m else " (HTTP 429)" if "rate limited" in text else ""
         if re.search(r" 40[13]\b|API.key.not.valid|API_KEY_INVALID|Authentication error", text, re.I):
-            return False, "the key was refused: copy it again"
+            return False, "the key was refused: copy it again" + code
         if "rate limited" in text or " 429" in text:
-            return False, "busy or over today's free limit (it rests and tries again tomorrow)"
+            return False, "busy or over today's free limit (it rests and tries again tomorrow)" + code
         if " 503" in text:
             return True, "the key works, but the model is busy right now (it retries on its own)"
+        if re.search(r"data policy|settings/privacy", text, re.I):
+            return False, "your privacy settings turn its free models off: openrouter.ai/settings/privacy" + code
+        if " 402" in text:
+            return False, "this model needs credits on the account" + code
         if text.startswith("empty answer"):
             found = "the key works (the test answer came back empty)"
         else:
-            return False, text.split(":", 1)[-1].strip()[:120]
+            return False, f"it answered with an error{code}: {text[m.end() if m else 0:][:100]}"
     except requests.RequestException as e:
         return False, f"no answer ({type(e).__name__})"
     except (KeyError, IndexError, ValueError):     # it answered (errors are raised before this), just oddly
@@ -72,7 +79,7 @@ def photos(cfg, name, url, key_name, params, first, header=False):
     except requests.RequestException as e:
         return False, f"no answer ({type(e).__name__})"
     if r.status_code != 200:
-        return False, f"{name} refused the key ({r.status_code})"
+        return False, f"{name} refused the key (HTTP {r.status_code})"
     data = r.json()
     n = data.get("totalHits", data.get("total_results", 0))
     if not n:
@@ -94,7 +101,7 @@ def cloudflare(cfg):
         return True, f"the sample site {cfg['pages']['cloudflare_project']}.pages.dev is ready"
     if r.status_code == 404:
         return True, "the token works; the sample site is made with the first sample"
-    return False, f"Cloudflare refused the token ({r.status_code}): it needs Cloudflare Pages · Edit"
+    return False, f"Cloudflare refused the token: it needs Cloudflare Pages · Edit (HTTP {r.status_code})"
 
 
 def hq_link(cfg):
@@ -105,7 +112,8 @@ def hq_link(cfg):
         hq._post(url, token, {"agent": hq.AGENT, "businesses": []})
         return True, "connected"
     except urllib.error.HTTPError as e:
-        return False, "HQ refused the token: copy HQ_TOKEN again from HQ → Settings" if e.code == 401 else f"HQ said {e.code}"
+        return False, ("HQ refused the token: copy HQ_TOKEN again from HQ → Settings" if e.code == 401
+                       else "HQ answered with an error") + f" (HTTP {e.code})"
     except (urllib.error.URLError, OSError, ValueError) as e:
         return False, f"couldn't reach HQ ({type(e).__name__}): check HQ_URL"
 
@@ -118,7 +126,7 @@ def meta(cfg):
         r = requests.get("https://graph.facebook.com/v21.0/me", params={"access_token": token}, timeout=20)
     except requests.RequestException as e:
         return False, f"no answer ({type(e).__name__})"
-    return (True, "token works") if r.status_code == 200 else (False, f"Meta refused the token ({r.status_code})")
+    return (True, "token works") if r.status_code == 200 else (False, f"Meta refused the token (HTTP {r.status_code})")
 
 
 def _safe(fn, *args, **kw):
@@ -150,7 +158,8 @@ def run(cfg, store):
     lines = ["<b>Studio agent check</b>"] + [f"{mark[ok]} <b>{esc(name)}</b>: {esc(why)}" for name, (ok, why) in results]
     lines.append("" if cfg.live else "\nMode is <b>draft</b>: nothing is emailed to businesses until you switch to live.")
     sent = telegram(cfg, "\n".join(lines))
-    for name, (ok, _) in results:
-        print(f"{name}: {'ok' if ok else 'skipped' if ok is None else 'FAILED'}")
+    for name, (ok, why) in results:                 # error texts stay on Telegram; only the HTTP status is logged
+        status = re.search(r"\(HTTP \d{3}\)", why) if ok is False else None
+        print(f"{name}: {'ok' if ok else 'skipped' if ok is None else 'FAILED'}{' ' + status[0] if status else ''}")
     print(f"Telegram: {'ok (the full report is there)' if sent else 'FAILED (check TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)'}")
     return results
