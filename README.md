@@ -78,7 +78,7 @@ Set `autopilot.clients: false` to check everything yourself first, or `review_fi
 | Pages | Cloudflare Pages | Your existing free account |
 | Writing | Gemini, Groq, Cloudflare Workers AI, OpenRouter | Free tiers, no card. Works with any one of them |
 | Abstract backgrounds | Cloudflare Workers AI | 10,000 free "neurons" a day, about 170 images |
-| Photos | The business's own, Pexels, Openverse | Free licenses |
+| Photos | The business's own, Pixabay, Openverse | Free licenses |
 | Businesses | Overture Maps | Free open data |
 | Trends | Google Trends, Bluesky, Nager.Date, Open-Meteo | No keys |
 | Fonts and icons | Google Fonts | Open licenses |
@@ -102,7 +102,9 @@ message **@BotFather** → `/newbot` → copy the token. Send your new bot any m
 - **Gemini**: aistudio.google.com/apikey → Create API key.
 - **Groq**: console.groq.com/keys → Create API Key.
 - **OpenRouter** (optional): openrouter.ai/keys.
-- **Pexels** (optional): Pexels has paused new API keys. You don't need one: without it the agent uses the business's own photos and free Openverse photos.
+- **Pixabay** (optional, theme photos): log in at pixabay.com, open pixabay.com/api/docs and copy your key
+  (secret `PIXABAY_API_KEY`). Without it the agent uses the business's own photos and free Openverse photos.
+  Pexels works too (`PEXELS_API_KEY`), but has paused new keys.
 
 ### 4. A Cloudflare token
 dash.cloudflare.com → My Profile → API Tokens → Create Token → Custom token with:
@@ -123,7 +125,7 @@ variables → Actions → New repository secret, for each:
 | `TELEGRAM_BOT_TOKEN` | from step 2 |
 | `TELEGRAM_CHAT_ID` | run **Actions → Studio agent → Run workflow → telegram-id** after adding the token, and copy the number from the log |
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | from step 4 |
-| `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `PEXELS_API_KEY` | from step 3 (any you have) |
+| `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `PIXABAY_API_KEY` | from step 3 (any you have) |
 | `STATE_KEY` | encrypts the agent's memory so the repository can be public: see "Minutes" |
 
 ### 6. config.yaml

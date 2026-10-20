@@ -831,6 +831,36 @@ class HQTests(unittest.TestCase):
             os.environ.pop("HQ_TOKEN", None)
 
 
+class StockPhotoTests(unittest.TestCase):
+    def test_pixabay_photos_are_downloaded_and_credited(self):
+        from agent import images
+        cfg, calls = cfg_for_tests(), []
+
+        class Resp:
+            status_code = 200
+
+            def __init__(self, data):
+                self.data = data
+
+            def json(self):
+                return self.data
+
+        def get(url, **kw):
+            calls.append((url, kw.get("params", {})))
+            return Resp({"hits": [{"largeImageURL": "https://cdn.pixabay.com/photo/x_1280.jpg", "user": "Ana",
+                                   "pageURL": "https://pixabay.com/photos/pumpkins-1/"}]})
+
+        os.environ["PIXABAY_API_KEY"] = "k"
+        try:
+            with patched((images.requests, "get", get), (images.web, "download", lambda url, folder: "/tmp/x_1280.jpg")):
+                got = images.stock(cfg, "pumpkins autumn", orientation="portrait")
+        finally:
+            os.environ.pop("PIXABAY_API_KEY", None)
+        self.assertEqual(got["credit"], "Photo by Ana on Pixabay")
+        self.assertEqual(calls[0][0], "https://pixabay.com/api/")
+        self.assertEqual((calls[0][1]["orientation"], calls[0][1]["image_type"]), ("vertical", "photo"))
+
+
 class PublicRepoTests(unittest.TestCase):
     def test_telegram_id_isnt_printed_in_a_public_repository(self):
         import contextlib

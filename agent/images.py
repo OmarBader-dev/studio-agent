@@ -1,7 +1,7 @@
 """Free pictures for designs, in order of preference:
 
 1. The business's own photos (from its website, or what a client sends).
-2. Theme photos for a moment (pumpkins for Halloween, snow for a cold snap) from Pexels (free key) or
+2. Theme photos for a moment (pumpkins for Halloween, snow for a cold snap) from Pixabay or Pexels (free keys) or
    Openverse (no key; openly licensed, attribution kept). Never used to stand in for the business's own
    food, products or place.
 3. Abstract AI backgrounds from Cloudflare Workers AI (free daily allowance), or Pollinations (no key) when
@@ -44,6 +44,17 @@ def stock(cfg, query, orientation="portrait"):
                 if path:
                     return {"path": str(path), "credit": f"Photo by {p.get('photographer', 'Pexels')} on Pexels",
                             "url": p.get("url")}
+        pixabay = cfg.secret("PIXABAY_API_KEY")
+        if pixabay:                             # free key; its license allows commercial use, photos are downloaded
+            r = requests.get("https://pixabay.com/api/", timeout=20,
+                             params={"key": pixabay, "q": query[:100], "image_type": "photo", "safesearch": "true",
+                                     "orientation": "vertical" if orientation == "portrait" else "horizontal",
+                                     "min_width": 900, "per_page": 5})
+            for hit in (r.json().get("hits", []) if r.status_code == 200 else []):
+                path = web.download(hit.get("largeImageURL") or hit.get("webformatURL"), FOLDER)
+                if path:
+                    return {"path": str(path), "credit": f"Photo by {hit.get('user') or 'Pixabay'} on Pixabay",
+                            "url": hit.get("pageURL")}
         r = requests.get("https://api.openverse.org/v1/images/", timeout=20, headers={"User-Agent": web.API_UA},
                          params={"q": query, "license_type": "commercial,modification", "page_size": 8,
                                  "aspect_ratio": "tall" if orientation == "portrait" else "wide", "mature": "false"})
