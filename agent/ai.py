@@ -71,6 +71,21 @@ def _resting(store, provider):
     return bool(until) and until > time.time()
 
 
+def _busy(store, provider):
+    """Models set aside because the (free) server behind them keeps turning requests away."""
+    return {m for m, until in ((store.flag("ai_busy") or {}).get(provider) or {}).items() if until > time.time()}
+
+
+def _set_aside(store, provider, model, hours=6):
+    busy = store.flag("ai_busy") or {}
+    busy[provider] = {m: t for m, t in (busy.get(provider) or {}).items() if t > time.time()}
+    busy[provider][model] = time.time() + hours * 3600
+    store.flag("ai_busy", busy)
+    models = store.flag("ai_models") or {}
+    models.pop(provider, None)                             # so the next call picks another model
+    store.flag("ai_models", models)
+
+
 def _rest(store, provider, seconds):
     rest = store.flag("ai_rest") or {}
     rest[provider] = time.time() + seconds
@@ -109,9 +124,9 @@ def _gemini_model(cfg):
     return max(flash, key=version) if flash else "gemini-flash-latest"
 
 
-def _listed(url, key, prefer):
+def _listed(url, key, prefer, skip=()):
     r = requests.get(url, headers={"Authorization": f"Bearer {key}"}, timeout=30)
-    ids = {m.get("id") for m in r.json().get("data", [])}
+    ids = {m.get("id") for m in r.json().get("data", [])} - set(skip)
     return next((p for p in prefer if p in ids), None) or next(
         (i for i in sorted(ids) if i and i.endswith(":free") and re.search(r"70b|120b|235b|405b|27b|32b", i)), None)
 
@@ -161,9 +176,15 @@ def _call(cfg, store, provider, system, prompt, max_tokens, temperature, json_mo
         r, text = _openai_style(f"{GROQ}/chat/completions", key, model, system, prompt, max_tokens, temperature, json_mode)
     elif provider == "openrouter":
         key = cfg.secret("OPENROUTER_API_KEY")
-        model = _cached_model(store, "openrouter", lambda: _listed(f"{OPENROUTER}/models", key, OPENROUTER_PREFER))
+        busy = _busy(store, "openrouter")
+        model = _cached_model(store, "openrouter", lambda: _listed(f"{OPENROUTER}/models", key, OPENROUTER_PREFER, busy))
+        if not model:
+            raise NoAI("openrouter: no free model is available right now")
         r, text = _openai_style(f"{OPENROUTER}/chat/completions", key, model, system, prompt, max_tokens, temperature,
                                 json_mode, headers={"X-Title": "studio-agent"})
+        if r.status_code in (429, 502, 503) and "free-models-per" not in r.text:
+            _set_aside(store, "openrouter", model)         # that model's free server is busy or down, not your account
+            raise NoAI(f"openrouter: {r.status_code} {model} is busy upstream")
     elif provider == "cloudflare":
         model = CF_TEXT[0] if (store.usage("cf_neurons_est", period="day") < 5000) else CF_TEXT[1]
         url = CF.format(account=cfg.secret("CLOUDFLARE_ACCOUNT_ID")) + "/run/" + model
@@ -186,8 +207,8 @@ def _call(cfg, store, provider, system, prompt, max_tokens, temperature, json_mo
     else:
         raise NoAI(provider)
     if r.status_code == 429:
-        _rest(store, provider, _until_tomorrow() if provider != "pollinations" else 120)
-        raise NoAI(f"{provider}: rate limited")
+        _rest(store, provider, 120 if provider == "pollinations" or "free-models-per-min" in r.text else _until_tomorrow())
+        raise NoAI(f"{provider}: rate limited" + (" (today's free requests are used up)" if "per-day" in r.text else ""))
     if r.status_code >= 400:
         if r.status_code in (401, 403):
             _rest(store, provider, _until_tomorrow())

@@ -34,18 +34,22 @@ def gmail(cfg):
         return False, f"couldn't reach Gmail ({type(e).__name__})"
 
 
-def ai_provider(cfg, store, provider):
-    if not ai._key(cfg, provider):
-        return None, "no key"
+def _ask(cfg, store, provider):
+    """(True, what answered) · (False, why) · (None, a busy free model: ask again and another one is picked)."""
     try:     # room for "thinking" models, which spend part of the answer's budget before they reply
         _, model = ai._call(cfg, store, provider, None, "Reply with the single word: ready", 400, 0, False)
-        found = f"{model.split(':', 1)[-1]} answered"
+        return True, f"{model.split(':', 1)[-1]} answered"
     except ai.NoAI as e:
         text = str(e)
+        busy = re.match(r"\w+: (\d{3}) (\S+) is busy upstream", text)
+        if busy:
+            return None, (busy[2].split("/")[-1], busy[1])
         m = re.match(r"\w+: (\d{3}) ", text)
         code = f" (HTTP {m[1]})" if m else " (HTTP 429)" if "rate limited" in text else ""
         if re.search(r" 40[13]\b|API.key.not.valid|API_KEY_INVALID|Authentication error", text, re.I):
             return False, "the key was refused: copy it again" + code
+        if "used up" in text:
+            return False, "today's free requests are used up (it tries again tomorrow)" + code
         if "rate limited" in text or " 429" in text:
             return False, "busy or over today's free limit (it rests and tries again tomorrow)" + code
         if " 503" in text:
@@ -55,17 +59,35 @@ def ai_provider(cfg, store, provider):
         if " 402" in text:
             return False, "this model needs credits on the account" + code
         if text.startswith("empty answer"):
-            found = "the key works (the test answer came back empty)"
-        else:
-            return False, f"it answered with an error{code}: {text[m.end() if m else 0:][:100]}"
+            return True, "the key works (the test answer came back empty)"
+        if "no free model" in text:
+            return False, "none of its free models is available right now (it tries again later)"
+        return False, f"it answered with an error{code}: {text[m.end() if m else 0:][:100]}"
     except requests.RequestException as e:
         return False, f"no answer ({type(e).__name__})"
     except (KeyError, IndexError, ValueError):     # it answered (errors are raised before this), just oddly
-        found = "the key works (the test answer came back in an odd shape)"
-    rest = store.flag("ai_rest") or {}
-    if rest.pop(provider, None):              # a key refused earlier and fixed since is used again right away
-        store.flag("ai_rest", rest)
-    return True, found
+        return True, "the key works (the test answer came back in an odd shape)"
+
+
+def ai_provider(cfg, store, provider):
+    if not ai._key(cfg, provider):
+        return None, "no key"
+    busy = []
+    for _ in range(3):           # a free model whose server is busy is set aside, and the next try picks another
+        ok, why = _ask(cfg, store, provider)
+        if ok is not None:
+            break
+        busy.append(why)
+    else:
+        return False, (f"the free models it tried are busy right now ({', '.join(m for m, _ in busy)}); "
+                       f"it tries others later (HTTP {busy[-1][1]})")
+    if ok:
+        rest = store.flag("ai_rest") or {}
+        if rest.pop(provider, None):          # a key refused earlier and fixed since is used again right away
+            store.flag("ai_rest", rest)
+        if busy:
+            why += f" ({', '.join(m for m, _ in busy)} was busy, so it's set aside for a few hours)"
+    return ok, why
 
 
 def photos(cfg, name, url, key_name, params, first, header=False):

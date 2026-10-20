@@ -916,6 +916,39 @@ class CheckTests(unittest.TestCase):
             os.environ.pop("GROQ_API_KEY", None)
         self.assertEqual(store.flag("ai_rest"), {"gemini": 9e12})        # used again right away, others untouched
 
+    def test_check_moves_past_a_busy_free_model(self):
+        from agent import check
+        cfg, calls = cfg_for_tests(), []
+
+        def call(*a):
+            calls.append(a[2])
+            if len(calls) == 1:
+                raise ai.NoAI("openrouter: 429 nvidia/nemotron-3-super-120b-a12b:free is busy upstream")
+            return "ready", "openrouter:google/gemma-4-31b-it:free"
+        os.environ["OPENROUTER_API_KEY"] = "k"
+        try:
+            with patched((check.ai, "_call", call)):
+                got = check.ai_provider(cfg, temp_store(), "openrouter")
+        finally:
+            os.environ.pop("OPENROUTER_API_KEY", None)
+        self.assertEqual(got, (True, "google/gemma-4-31b-it:free answered (nemotron-3-super-120b-a12b:free was busy, "
+                                     "so it's set aside for a few hours)"))
+
+    def test_check_says_when_every_free_model_it_tried_is_busy(self):
+        from agent import check
+
+        def call(*a):
+            raise ai.NoAI("openrouter: 503 some/model:free is busy upstream")
+        cfg = cfg_for_tests()                                       # (it clears keys, so it comes first)
+        os.environ["OPENROUTER_API_KEY"] = "k"
+        try:
+            with patched((check.ai, "_call", call)):
+                ok, why = check.ai_provider(cfg, temp_store(), "openrouter")
+        finally:
+            os.environ.pop("OPENROUTER_API_KEY", None)
+        self.assertIs(ok, False)
+        self.assertTrue(why.endswith("(HTTP 503)"), why)
+
     def test_check_log_shows_only_the_status_of_a_failure(self):
         from agent import check
         import contextlib
@@ -935,6 +968,56 @@ class CheckTests(unittest.TestCase):
         self.assertIn("openrouter.ai/settings/privacy", results["OpenRouter"][1])
         self.assertIn("OpenRouter: FAILED (HTTP 404)\n", out.getvalue())
         self.assertNotIn("data policy", out.getvalue())                      # the error text stays on Telegram
+
+
+class OpenRouterTests(unittest.TestCase):
+    """Its free models run on other companies' servers, which are sometimes busy or down for a while."""
+
+    class Resp:
+        def __init__(self, status, data):
+            self.status_code, self.data, self.text = status, data, json.dumps(data)
+
+        def json(self):
+            return self.data
+
+    def ask_twice(self, first_answer):
+        cfg, store, asked = cfg_for_tests(), temp_store(), []
+        listed = self.Resp(200, {"data": [{"id": m} for m in ai.OPENROUTER_PREFER[:2]]})
+
+        def post(url, **kw):
+            asked.append(kw["json"]["model"])
+            if len(asked) == 1:
+                return first_answer
+            return self.Resp(200, {"choices": [{"message": {"content": "ready"}}]})
+
+        os.environ["OPENROUTER_API_KEY"] = "k"
+        try:
+            with patched((ai.requests, "get", lambda url, **kw: listed), (ai.requests, "post", post)):
+                with self.assertRaises(ai.NoAI) as first:
+                    ai._call(cfg, store, "openrouter", None, "hi", 50, 0, False)
+                resting = ai._resting(store, "openrouter")
+                second = None if resting else ai._call(cfg, store, "openrouter", None, "hi", 50, 0, False)
+        finally:
+            os.environ.pop("OPENROUTER_API_KEY", None)
+        return store, asked, str(first.exception), resting, second
+
+    def test_a_busy_free_model_is_set_aside_and_the_next_one_answers(self):
+        upstream = self.Resp(429, {"error": {"message": "Provider returned error", "code": 429, "metadata": {
+            "raw": "nvidia/x:free is temporarily rate-limited upstream. Please retry shortly"}}})
+        store, asked, error, resting, second = self.ask_twice(upstream)
+        self.assertIn("is busy upstream", error)
+        self.assertFalse(resting)                                   # one busy model doesn't bench all of OpenRouter
+        self.assertEqual(second, ("ready", "openrouter:" + ai.OPENROUTER_PREFER[1]))
+        self.assertEqual(asked, ai.OPENROUTER_PREFER[:2])
+        self.assertEqual(ai._busy(store, "openrouter"), {ai.OPENROUTER_PREFER[0]})
+
+    def test_the_accounts_daily_free_limit_rests_until_tomorrow(self):
+        daily = self.Resp(429, {"error": {"message": "Rate limit exceeded: free-models-per-day. Add 10 credits to "
+                                                     "unlock 1000 free model requests per day", "code": 429}})
+        store, asked, error, resting, second = self.ask_twice(daily)
+        self.assertIn("used up", error)
+        self.assertTrue(resting)
+        self.assertEqual(ai._busy(store, "openrouter"), set())
 
 
 class PublicRepoTests(unittest.TestCase):
