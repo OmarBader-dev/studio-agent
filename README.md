@@ -148,7 +148,7 @@ then Deploy:
 ```
 
 and change the Worker's Cron Trigger to `7,13,37 * * * *`. The `worker.js` in this repository already has these
-lines, and checks your other agents' replies every 3 hours instead of every hour to make room in your free minutes
+lines, and checks your other agents' replies every 2 hours instead of every hour to stay in your free minutes
 (see "Minutes"), so you can paste it whole. Also tick the new repository in the Worker's
 GitHub token (Only select repositories), or `/check` will show a 404 for it.
 
