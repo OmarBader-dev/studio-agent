@@ -4,7 +4,7 @@
 you:
   name: "Omar Bader"
   business: "Omar Bader Studio"       # shown on sample pages and under your name in emails
-  email: ""                           # the Gmail account the agent sends from and reads replies in
+  email: "omar.bader.studio@gmail.com"   # the Gmail account the agent sends from and reads replies in
   mailing_address: "Saroulla Bldg, 11th floor, Hamra Main Street, Beirut, Lebanon"   # REQUIRED by US anti-spam law
   website: ""                         # optional
   instagram: ""                       # optional: your own Instagram, shown on sample pages
