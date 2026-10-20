@@ -32,7 +32,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      # The newest commit when the run starts, not when it was queued: a run that waited for another one to
+      # finish starts from the memory that one just saved (otherwise saving its own memory fails).
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref_name }}
 
       - name: Find the agent's files
         run: |
