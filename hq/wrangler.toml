@@ -1,0 +1,25 @@
+# HQ's Cloudflare settings. The HQ workflow (.github/workflows/hq.yml) finds or makes the "studio-hq" D1
+# database and puts its id below before deploying, so you never edit this file by hand.
+name = "studio-hq"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+workers_dev = true
+keep_vars = true
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "studio-hq"
+database_id = "00000000-0000-0000-0000-000000000000"
+
+# Every hour at :05. HQ sends the daily Telegram list at the hour you pick in Settings (Beirut time).
+[triggers]
+crons = ["5 * * * *"]
+
+[observability]
+enabled = true

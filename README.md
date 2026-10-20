@@ -108,6 +108,8 @@ message **@BotFather** → `/newbot` → copy the token. Send your new bot any m
 dash.cloudflare.com → My Profile → API Tokens → Create Token → Custom token with:
 - Account · **Cloudflare Pages** · Edit
 - Account · **Workers AI** · Edit
+- Account · **Workers Scripts** · Edit, Account · **D1** · Edit and Account · **Account Settings** · Read: these three
+  are for HQ, your dashboard (see "HQ" below)
 
 Your Account ID is on the right side of the Cloudflare dashboard's home page.
 
@@ -196,6 +198,14 @@ Maps, send its website to the bot, then send them the DM it gives you.
 6. On the first run of each month, each client gets a short report: what was made and posted, and what's
    coming up next month (you get a copy on Telegram). Set `reports: false` for a client to skip the email.
 
+## HQ: your dashboard
+
+`hq/` is a private web app on your Cloudflare account (free) for all three agents: every business by stage (preview
+sent, replied, interested, client, lost), who to call today with the best time in Beirut time, a Call button that
+calls from your own US Twilio number, and your clients with the date they bought and when they renew. Anyone you
+mark interested, bought or not interested there stops getting the agents' emails, and a studio business you mark as
+bought can have its service started straight away. Setup and details: [hq/README.md](hq/README.md).
+
 ## Posting for clients
 
 1. Create a free Meta app at developers.facebook.com (type Business). In development mode it can post to
@@ -249,5 +259,5 @@ repository made public later still has its old, readable memory in its history.
 `agent/` the code (`social.py` writes the posts, `designer.py`, `styles.py`, `motion.py` and `menus.py` make the
 designs, Reels and menus, `pipeline.py` finds and contacts businesses, `clients.py` serves clients) ·
 `config.yaml` your settings · `clients.yaml` your clients · `data/state.json` (or `state.enc`) its memory ·
-`clients/` client photos you add · `worker.js` the updated scheduler · `tests/` offline tests
-(`python -m unittest discover tests`).
+`clients/` client photos you add · `worker.js` the updated scheduler · `hq/` your dashboard (HQ) · `tests/` offline
+tests (`python -m unittest discover tests`).

@@ -22,7 +22,7 @@ import re
 
 from . import brand, clients, design, designer, notify, packs, pipeline, publish, trends
 from .notify import esc, link, telegram
-from .settings import CACHE, NICHES, SITE, plan_has, plan_of
+from .settings import CACHE, NICHES, PLANS, SITE, plan_has, plan_of
 
 PLAN_ALIASES = {"social": "social", "design": "design", "bundle": "bundle", "both": "bundle", "all": "bundle"}
 from .store import iso
@@ -219,7 +219,25 @@ class Session:
             telegram(self.cfg, f"No business called {esc(name)} in your leads. Use its website instead: "
                                "/client https://their-site.com social")
             return
-        plan = plan or lead.get("plan_chosen") or "social"
+        self.onboard(lead, plan or lead.get("plan_chosen") or "social", email)
+
+    def onboard_from_hq(self, items):
+        """Businesses you marked as bought in HQ with "start their service now"."""
+        n = 0
+        for item in items:
+            lead = self.store.leads.get(item.get("id"))
+            if not lead or lead.get("status") == "client":
+                continue
+            plan = item.get("plan") if item.get("plan") in PLANS else "social"
+            try:
+                self.onboard(lead, plan, item.get("email") or "")
+                n += 1
+            except Exception as e:
+                telegram(self.cfg, f"HQ asked me to start {esc(lead.get('name', ''))}'s service, but it failed: "
+                                   f"{esc(str(e)[:200])}")
+        return n
+
+    def onboard(self, lead, plan, email=""):
         client = clients.add_client(self.cfg, self.store, lead, plan, email)
         key = clients.key_of(client)
         telegram(self.cfg, f"✅ <b>{esc(client['name'])}</b> is now a client ({esc(plan)}). "

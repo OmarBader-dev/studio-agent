@@ -18,7 +18,7 @@ import re
 import shutil
 import sys
 
-from . import clients, commands, design, inbox, mailer, meta, notify, packs, pipeline, publish, settings, trends
+from . import clients, commands, design, hq, inbox, mailer, meta, notify, packs, pipeline, publish, settings, trends
 from .notify import esc, telegram
 from .settings import SITE
 from .store import Store, now
@@ -124,6 +124,7 @@ def cmd_inbox(cfg, store):
             print("Inbox:", counts)
         else:
             print("Gmail isn't set up yet, so replies weren't checked.")
+        hq.sync(cfg, store, on_onboard=session.onboard_from_hq)   # clients you marked as bought in HQ start now
         session.finish()
     finally:
         session.close()
@@ -245,6 +246,9 @@ def main(argv):
         COMMANDS[argv[0]](cfg, store, *[a for a in argv[1:] if a])
     finally:
         store.save()
+        if argv[0] in ("daily", "inbox", "contacts", "sample", "week", "design"):
+            hq.sync(cfg, store)                     # your dashboard sees what this run changed
+            store.save()
     return 0
 
 

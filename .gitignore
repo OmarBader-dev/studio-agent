@@ -5,3 +5,8 @@ data/cache/
 site/
 data/state.json.tmp*
 data/*.tmp
+
+# HQ local testing
+hq/.wrangler/
+hq/.dev.vars
+hq/node_modules/

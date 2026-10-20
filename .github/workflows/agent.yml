@@ -81,6 +81,8 @@ jobs:
           TICKETMASTER_API_KEY: ${{ secrets.TICKETMASTER_API_KEY }}
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
           STATE_KEY: ${{ secrets.STATE_KEY }}
+          HQ_URL: ${{ secrets.HQ_URL }}               # your HQ dashboard (optional), from HQ → Settings
+          HQ_TOKEN: ${{ secrets.HQ_TOKEN }}
           CMD: ${{ inputs.command }}
           TARGET: ${{ inputs.target }}
           REQUEST: ${{ inputs.request }}

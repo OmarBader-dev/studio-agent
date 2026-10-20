@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from email import policy
 
-from agent import (ai, brand, clients, colors, commands, designer, fonts, inbox, mailer, meta, observances, packs,
+from agent import (ai, brand, clients, colors, commands, designer, fonts, hq, inbox, mailer, meta, observances, packs,
                    pipeline, prospect, settings, social, trends)
 from agent.store import Store, iso
 
@@ -724,6 +724,21 @@ class AutopilotTests(unittest.TestCase):
         settings.with_saved_clients(cfg2, self.store.data["clients_db"])
         self.assertEqual([c["name"] for c in cfg2["clients"]], ["Joe's Pizza"])
 
+    def test_clients_marked_bought_in_hq_get_started(self):
+        self.cfg["clients"] = []
+        self.store.add({"id": "ov:7", "name": "Bean & Co", "email": "owner@bean.co", "status": "emailed",
+                        "website": "https://bean.co", "niche": "cafe", "city": "Columbus", "state": "OH"})
+        weeks = []
+        with patched((commands, "telegram", self.tg), (clients, "telegram", self.tg)):
+            s = commands.Session(self.cfg, self.store)
+            s.week = lambda name: weeks.append(name)
+            n = s.onboard_from_hq([{"id": "ov:7", "plan": "design", "email": ""}, {"id": "gone", "plan": "social"}])
+            again = s.onboard_from_hq([{"id": "ov:7", "plan": "design"}])         # already a client: not twice
+        self.assertEqual((n, again), (1, 0))
+        self.assertEqual(self.store.data["clients_db"]["bean-co"]["plan"], "design")
+        self.assertEqual(self.store.leads["ov:7"]["status"], "client")
+        self.assertEqual(weeks, [])                                                 # design only: no weekly posts
+
     def test_billing_reminders_until_paid(self):
         c = dict(self.client, started="2026-10-01")
         self.cfg["clients"] = [c]
@@ -755,6 +770,65 @@ class AutopilotTests(unittest.TestCase):
         self.assertEqual((self.client["meta_page_id"], self.client["meta_ig_id"]), ("111", "999"))
         self.assertEqual(self.store.client("bean-co")["meta"]["ig_id"], "999")
         self.assertFalse(meta.enabled(self.cfg))                    # no token, no posting
+
+
+class HQTests(unittest.TestCase):
+    def setUp(self):
+        self.cfg, self.store = cfg_for_tests(), temp_store()
+        for i, status in enumerate(["emailed", "ready", "manual", "skipped", "replied"]):
+            self.store.add({"id": f"ov:{i}", "name": f"Cafe {i}", "niche": "cafe", "city": "Columbus", "state": "OH",
+                            "email": f"hi@cafe{i}.com", "phone": "(614) 555-010" + str(i), "status": status,
+                            "sample_url": f"https://x.pages.dev/s/{i}/", "touches": 1 if status == "emailed" else 0})
+
+    def test_record_for_each_kind_of_agent(self):
+        rec = hq.record(self.store.leads["ov:0"])
+        self.assertEqual((rec["name"], rec["kind"], rec["preview_url"], rec["touches"]),
+                         ("Cafe 0", "cafe", "https://x.pages.dev/s/0/", 1))
+        site = hq.record({"id": "site:a.dev", "domain": "a.dev", "title": "Show HN: A thing", "status": "manual",
+                          "report_url": "https://r.pages.dev/r/t/", "grade": "C"})
+        self.assertEqual((site["name"], site["kind"], site["preview_url"], site["extra"]),
+                         ("a.dev", "Show HN: A thing", "https://r.pages.dev/r/t/", {"grade": "C"}))
+
+    def test_sync_sends_changes_and_takes_back_your_decisions(self):
+        sent, replies = [], [{"stop": ["ov:0", "ov:4"], "onboard": [{"id": "ov:1", "plan": "bundle"}]}, {}, {}]
+        started = []
+
+        def post(url, token, payload, timeout=25):
+            sent.append(payload)
+            return replies[len(sent) - 1] if len(sent) <= len(replies) else {}
+
+        os.environ.update(HQ_URL="https://hq.example.workers.dev", HQ_TOKEN="t0ken")
+        try:
+            with patched((hq, "_post", post)):
+                r = hq.sync(self.cfg, self.store, on_onboard=lambda items: started.extend(items) or len(items))
+                self.assertEqual(r, {"sent": 4, "stopped": 1, "started": 1})       # the skipped one isn't sent
+                self.assertEqual(sorted(b["id"] for b in sent[0]["businesses"]), ["ov:0", "ov:1", "ov:2", "ov:4"])
+                self.assertEqual(sent[0]["agent"], "studio")
+                self.assertEqual(self.store.leads["ov:0"]["status"], "finished")   # no more follow-ups
+                self.assertEqual(self.store.leads["ov:4"]["status"], "replied")    # replied: nothing to stop
+                self.assertEqual(started, [{"id": "ov:1", "plan": "bundle"}])
+                hq.sync(self.cfg, self.store)                                      # only what changed: ov:0
+                self.assertEqual([b["id"] for b in sent[1]["businesses"]], ["ov:0"])
+                hq.sync(self.cfg, self.store)
+                self.assertEqual(sent[2]["businesses"], [])                        # nothing new, still asks
+        finally:
+            os.environ.pop("HQ_URL", None)
+            os.environ.pop("HQ_TOKEN", None)
+
+    def test_without_hq_or_when_it_is_down_the_run_carries_on(self):
+        self.assertIsNone(hq.sync(self.cfg, self.store))                           # not set up: nothing happens
+
+        def down(*a, **k):
+            raise OSError("connection refused")
+
+        os.environ.update(HQ_URL="https://hq.example.workers.dev", HQ_TOKEN="t0ken")
+        try:
+            with patched((hq, "_post", down)):
+                self.assertIsNone(hq.sync(self.cfg, self.store))
+            self.assertEqual(self.store.data.get("hq_sent"), {})                   # all sent again next time
+        finally:
+            os.environ.pop("HQ_URL", None)
+            os.environ.pop("HQ_TOKEN", None)
 
 
 class StoreTests(unittest.TestCase):
