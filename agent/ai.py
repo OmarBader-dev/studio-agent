@@ -34,9 +34,10 @@ POLLINATIONS = "https://text.pollinations.ai/openai"
 GROQ_PREFER = ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "moonshotai/kimi-k2-instruct",
                "meta-llama/llama-4-maverick-17b-128e-instruct", "qwen/qwen3-32b", "openai/gpt-oss-20b",
                "llama-3.1-8b-instant"]
-OPENROUTER_PREFER = ["google/gemma-4-31b-it:free", "nvidia/nemotron-3-super-120b-a12b:free",    # free list, Oct 2026
-                     "minimax/minimax-m3.1-flash:free", "google/gemma-4-26b-a4b-it:free",
-                     "openai/gpt-oss-120b:free", "meta-llama/llama-3.3-70b-instruct:free", "qwen/qwen3-235b-a22b:free"]
+OPENROUTER_PREFER = ["minimax/minimax-m3.1-flash:free", "google/gemma-4-31b-it:free",           # free list, Oct 2026
+                     "nvidia/nemotron-3-super-120b-a12b:free", "dots-studio/dots-3-note-preview:free",
+                     "thinkingmachines/inkling:free", "nvidia/nemotron-3-ultra-550b-a55b:free",
+                     "google/gemma-4-26b-a4b-it:free", "openai/gpt-oss-120b:free", "meta-llama/llama-3.3-70b-instruct:free"]
 CF_TEXT = ["@cf/meta/llama-3.3-70b-instruct-fp8-fast", "@cf/meta/llama-3.1-8b-instruct-fp8-fast"]
 CF_VISION = "@cf/meta/llama-3.2-11b-vision-instruct"
 
@@ -185,6 +186,10 @@ def _call(cfg, store, provider, system, prompt, max_tokens, temperature, json_mo
         if r.status_code in (429, 502, 503) and "free-models-per" not in r.text:
             _set_aside(store, "openrouter", model)         # that model's free server is busy or down, not your account
             raise NoAI(f"openrouter: {r.status_code} {model} is busy upstream")
+        if r.status_code == 404 and "no endpoints found" in r.text.lower():
+            _set_aside(store, "openrouter", model, hours=24)   # e.g. your privacy settings rule out its free host
+            why = "your OpenRouter privacy settings rule out its free host" if "data policy" in r.text else "not offered"
+            raise NoAI(f"openrouter: 404 {model} is off for this account ({why})")
     elif provider == "cloudflare":
         model = CF_TEXT[0] if (store.usage("cf_neurons_est", period="day") < 5000) else CF_TEXT[1]
         url = CF.format(account=cfg.secret("CLOUDFLARE_ACCOUNT_ID")) + "/run/" + model

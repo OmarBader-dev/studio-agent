@@ -931,8 +931,8 @@ class CheckTests(unittest.TestCase):
                 got = check.ai_provider(cfg, temp_store(), "openrouter")
         finally:
             os.environ.pop("OPENROUTER_API_KEY", None)
-        self.assertEqual(got, (True, "google/gemma-4-31b-it:free answered (nemotron-3-super-120b-a12b:free was busy, "
-                                     "so it's set aside for a few hours)"))
+        self.assertEqual(got, (True, "google/gemma-4-31b-it:free answered. Set aside for now: "
+                                     "nemotron-3-super-120b-a12b:free: its free server is busy"))
 
     def test_check_says_when_every_free_model_it_tried_is_busy(self):
         from agent import check
@@ -1010,6 +1010,16 @@ class OpenRouterTests(unittest.TestCase):
         self.assertEqual(second, ("ready", "openrouter:" + ai.OPENROUTER_PREFER[1]))
         self.assertEqual(asked, ai.OPENROUTER_PREFER[:2])
         self.assertEqual(ai._busy(store, "openrouter"), {ai.OPENROUTER_PREFER[0]})
+
+    def test_a_model_the_privacy_settings_rule_out_is_set_aside_for_a_day(self):
+        policy = self.Resp(404, {"error": {"code": 404, "message": "No endpoints found matching your data policy "
+                                           "(Free model training). Configure: https://openrouter.ai/settings/privacy"}})
+        store, asked, error, resting, second = self.ask_twice(policy)
+        self.assertIn("privacy settings", error)
+        self.assertFalse(resting)
+        self.assertEqual(second, ("ready", "openrouter:" + ai.OPENROUTER_PREFER[1]))
+        until = store.flag("ai_busy")["openrouter"][ai.OPENROUTER_PREFER[0]]
+        self.assertGreater(until, __import__("time").time() + 20 * 3600)
 
     def test_the_accounts_daily_free_limit_rests_until_tomorrow(self):
         daily = self.Resp(429, {"error": {"message": "Rate limit exceeded: free-models-per-day. Add 10 credits to "

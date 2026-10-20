@@ -35,15 +35,16 @@ def gmail(cfg):
 
 
 def _ask(cfg, store, provider):
-    """(True, what answered) · (False, why) · (None, a busy free model: ask again and another one is picked)."""
+    """(True, what answered) · (False, why) · (None, (model, HTTP status, why it was set aside)): ask again and
+    another free model is picked."""
     try:     # room for "thinking" models, which spend part of the answer's budget before they reply
         _, model = ai._call(cfg, store, provider, None, "Reply with the single word: ready", 400, 0, False)
         return True, f"{model.split(':', 1)[-1]} answered"
     except ai.NoAI as e:
         text = str(e)
-        busy = re.match(r"\w+: (\d{3}) (\S+) is busy upstream", text)
-        if busy:
-            return None, (busy[2].split("/")[-1], busy[1])
+        aside = re.match(r"\w+: (\d{3}) (\S+) is (busy upstream|off for this account \((.+)\))", text)
+        if aside:
+            return None, (aside[2].split("/")[-1], aside[1], aside[4] or "its free server is busy")
         m = re.match(r"\w+: (\d{3}) ", text)
         code = f" (HTTP {m[1]})" if m else " (HTTP 429)" if "rate limited" in text else ""
         if re.search(r" 40[13]\b|API.key.not.valid|API_KEY_INVALID|Authentication error", text, re.I):
@@ -72,21 +73,21 @@ def _ask(cfg, store, provider):
 def ai_provider(cfg, store, provider):
     if not ai._key(cfg, provider):
         return None, "no key"
-    busy = []
-    for _ in range(3):           # a free model whose server is busy is set aside, and the next try picks another
+    aside = []
+    for _ in range(3):        # a free model that's busy or ruled out is set aside, and the next try picks another
         ok, why = _ask(cfg, store, provider)
         if ok is not None:
             break
-        busy.append(why)
-    else:
-        return False, (f"the free models it tried are busy right now ({', '.join(m for m, _ in busy)}); "
-                       f"it tries others later (HTTP {busy[-1][1]})")
+        aside.append(why)
+    notes = "; ".join(f"{model}: {reason}" for model, _, reason in aside)
+    if ok is None:
+        return False, f"none of the free models it tried answered ({notes}); it tries others later (HTTP {aside[-1][1]})"
     if ok:
         rest = store.flag("ai_rest") or {}
         if rest.pop(provider, None):          # a key refused earlier and fixed since is used again right away
             store.flag("ai_rest", rest)
-        if busy:
-            why += f" ({', '.join(m for m, _ in busy)} was busy, so it's set aside for a few hours)"
+        if aside:
+            why += f". Set aside for now: {notes}"
     return ok, why
 
 
