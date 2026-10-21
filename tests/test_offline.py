@@ -916,6 +916,23 @@ class CheckTests(unittest.TestCase):
             os.environ.pop("GROQ_API_KEY", None)
         self.assertEqual(store.flag("ai_rest"), {"gemini": 9e12})        # used again right away, others untouched
 
+    def test_check_explains_a_project_google_blocked(self):
+        from agent import check
+        cfg = cfg_for_tests()
+
+        def call(*a):
+            raise ai.NoAI('gemini: 403 {"error": {"code": 403, "message": "Your project has been denied access. '
+                          'Please contact support.", "status": "PERMISSION_DENIED"}}')
+        os.environ["GEMINI_API_KEY"] = "k"
+        try:
+            with patched((check.ai, "_call", call)):
+                ok, why = check.ai_provider(cfg, temp_store(), "gemini")
+        finally:
+            os.environ.pop("GEMINI_API_KEY", None)
+        self.assertIs(ok, False)
+        self.assertTrue(why.startswith("Google has blocked the project"), why)
+        self.assertTrue(why.endswith("(HTTP 403)"))
+
     def test_check_moves_past_a_busy_free_model(self):
         from agent import check
         cfg, calls = cfg_for_tests(), []

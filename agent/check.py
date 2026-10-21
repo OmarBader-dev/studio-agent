@@ -47,6 +47,9 @@ def _ask(cfg, store, provider):
             return None, (aside[2].split("/")[-1], aside[1], aside[4] or "its free server is busy")
         m = re.match(r"\w+: (\d{3}) ", text)
         code = f" (HTTP {m[1]})" if m else " (HTTP 429)" if "rate limited" in text else ""
+        if "denied access" in text:            # Google flagged the account or project, not the key itself
+            return False, ("Google has blocked the project behind this key (AI Studio may show it as Unavailable): "
+                           "verify the Google account, then make a new key, or ask Google to review it" + code)
         if re.search(r" 40[13]\b|API.key.not.valid|API_KEY_INVALID|Authentication error", text, re.I):
             return False, "the key was refused: copy it again" + code
         if "used up" in text:
