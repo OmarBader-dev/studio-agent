@@ -25,6 +25,7 @@ import requests
 from .store import now
 
 TIMEOUT = 90
+THINKING_ROOM = 3000      # newer Gemini models think before answering, and that counts toward the answer's limit
 GEMINI = "https://generativelanguage.googleapis.com/v1beta"
 GROQ = "https://api.groq.com/openai/v1"
 OPENROUTER = "https://openrouter.ai/api/v1"
@@ -163,7 +164,7 @@ def _call(cfg, store, provider, system, prompt, max_tokens, temperature, json_mo
     if provider == "gemini":
         model = _cached_model(store, "gemini", lambda: _gemini_model(cfg))
         body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}],
-                "generationConfig": {"maxOutputTokens": max_tokens, "temperature": temperature}}
+                "generationConfig": {"maxOutputTokens": max_tokens + THINKING_ROOM, "temperature": temperature}}
         if system:
             body["systemInstruction"] = {"parts": [{"text": system}]}
         if json_mode:
@@ -302,7 +303,7 @@ def see(cfg, store, image_path, prompt, max_tokens=600):
             r = requests.post(f"{GEMINI}/models/{model}:generateContent", params={"key": cfg.secret("GEMINI_API_KEY")},
                               json={"contents": [{"parts": [{"inline_data": {"mime_type": mime, "data": data}},
                                                             {"text": prompt}]}],
-                                    "generationConfig": {"maxOutputTokens": max_tokens,
+                                    "generationConfig": {"maxOutputTokens": max_tokens + THINKING_ROOM,
                                                          "responseMimeType": "application/json"}}, timeout=TIMEOUT)
             if r.status_code == 429:
                 _rest(store, "gemini", _until_tomorrow())

@@ -156,7 +156,8 @@ def cmd_sample(cfg, store, url="", *rest):
         session.finish()
         for lead in session.samples:
             where = lead.get("sample_url") or (session.root / "s" / lead["token"] / "index.html")
-            print(lead["name"], "->", "(the link is on Telegram)" if settings.public_repo() else where)
+            print(lead["name"], "->", "(the link is on Telegram)" if settings.public_repo() else where,
+                  f"· posts written by {lead.get('ai') or 'built-in templates'}")
     finally:
         session.close()
 
