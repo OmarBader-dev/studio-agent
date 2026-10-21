@@ -55,6 +55,7 @@ class Session:
         self._renderer = None
         self.root = SITE / "commands"
         self.samples, self.weeks = [], []
+        self.problem = None                                  # why the last sample wasn't made
 
     @property
     def renderer(self):
@@ -113,6 +114,7 @@ class Session:
         niche = next((n for n in NICHES if re.search(rf"\b{n}\b", text, re.I)), None)
         kit = brand.read(url, niche=niche or "restaurant", budget=45)
         if not kit["ok"]:
+            self.problem = f"couldn't read the website: {kit.get('problem')}"
             telegram(self.cfg, f"I couldn't read {esc(url)}: {esc(kit.get('problem'))}.")
             return
         niche = niche or guess_niche(kit.get("title", "") + " " + kit.get("text", "")[:3000])
@@ -124,6 +126,7 @@ class Session:
                                     lambda city: trends.radar(self.cfg, self.store, city=city or None), self.root,
                                     force=True)
         if lead["status"] == "skipped" and lead.get("skip_reason") != "no email and no social pages to message":
+            self.problem = f"skipped: {lead.get('skip_reason')}"
             telegram(self.cfg, f"Skipped {esc(name)}: {esc(lead.get('skip_reason'))}.")
             return
         lead["status"] = "manual"     # you send it yourself: automatic emails only go to the US businesses it finds

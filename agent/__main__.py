@@ -154,6 +154,8 @@ def cmd_sample(cfg, store, url="", *rest):
     try:
         session.sample(" ".join([url, *rest]))
         session.finish()
+        if session.problem:
+            print("No sample was made:", session.problem)
         for lead in session.samples:
             where = lead.get("sample_url") or (session.root / "s" / lead["token"] / "index.html")
             print(lead["name"], "->", "(the link is on Telegram)" if settings.public_repo() else where,
