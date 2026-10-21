@@ -60,19 +60,70 @@ local and on-brand, and that people actually stop scrolling for.
 
 Hard rules:
 - Only mention products, services, prices and offers that appear in the WEBSITE TEXT. Never invent a deal,
-  discount, price, menu item, award or claim. If unsure, talk about the moment and the vibe instead.
+  discount, price, menu item, award or claim. If unsure, name what they're known for instead.
 - Never use a real person's name, a celebrity, a sports team, a league, a TV show or another brand's name.
   Use the theme instead ("the big game", "spooky season", "the season finale everyone's talking about").
 - Nothing about politics, tragedies, crime, illness, disasters or religion (major holidays are fine).
 - Alcohol: only for 21+ venues, never encourage heavy drinking.
-- Headlines on the image: 2 to 6 words, punchy. Image subhead: under 90 characters.
+- The words on the image sell a visit: the headline (2 to 6 words) names something real they sell and why
+  to come this week; the subhead (under 70 characters) gives the concrete next step. Never vague lines that
+  would fit any business ("fall flavors", "Korean favorites", "taste the season", "treat yourself").
 - Never promise anything for the business: no giveaways, prizes, contests, surprises, or "we'll feature you",
   and no events, parties or opening hours the WEBSITE TEXT doesn't mention.
 - Feed posts: never say "swipe up" (it no longer exists), and no polls or stickers (those are story features).
   To start a conversation, ask people to answer in the comments.
-- Captions: 40 to 120 words, warm and specific, 0 to 3 emojis, one clear call to action, no hashtags inside.
+- Captions: 40 to 120 words, warm and specific, 0 to 3 emojis, no hashtags inside. End with one concrete next
+  step the website supports (come by, the street if it's listed, order online, book online, call).
 - Hashtags: 6 to 10, mixing local (city), niche and moment tags, no spaces, no celebrity or brand tags.
 Reply with JSON only."""
+
+
+# Lines that could sit on any business's post: they sell nothing (a headline needs a real item instead)
+VAGUE = re.compile(r"\b(flavou?rs?|favou?rites?|delights?|goodness|vibes?|experience|journey|elevate|indulge|treat yourself|"
+                   r"taste the season|cozy season|bite into|feels|spooky season|something (?:good|special|sweet)|"
+                   r"made with love|season(?:al)? (?:treats|eats)|treats?|eats|trend or timeless|this or that|your turn|"
+                   r"hello,? (?:fall|autumn|winter|spring|summer)|good times|deliciousness)\b", re.I)
+NAME_FILLER = {"with", "from", "made", "fresh", "house", "classic", "special", "signature", "daily", "local",
+               "homemade", "handmade", "original", "famous", "best", "food", "menu", "dish", "dishes", "plate",
+               "bowl", "bowls", "items", "products", "services", "service"}
+
+
+def names_item(text, prof, site=""):
+    """True when text names something real the business sells (one of its offerings, or a product word its
+    own website uses)."""
+    low = (text or "").lower()
+    items = [prof.get("signature") or ""] + list(prof.get("offerings") or [])
+    words = {w for it in items for w in re.findall(r"[a-z]{4,}", it.lower())} - NAME_FILLER
+    if any(re.search(r"\b" + re.escape(w), low) for w in words):
+        return True
+    site = (site or "").lower()
+    return any(re.search(r"\b" + re.escape(t) + r"s?\b", low) and t in site
+               for terms in PRODUCTS.values() for t in terms)
+
+
+def item_line(prof, niche, seed=0):
+    """A headline that names what they sell, for when the written one didn't: plain, true, a reason to come."""
+    item = re.sub(r"\s*\([^)]*\)", "", prof.get("signature") or (prof.get("offerings") or [""])[0] or "").strip(" .,")
+    if not item or len(item) > 32:
+        return ""
+    food = niche in ("restaurant", "cafe", "bakery", "bar")
+    lines = ([f"Come hungry for {item}", f"{item}, ready for you", f"This week: {item}"] if food else
+             [f"Book your {item.lower()}", f"Time for {item.lower()}", f"This week: {item}"] if niche == "beauty" else
+             [f"Try {item} this week", f"Come try {item}", f"This week: {item}"])
+    return _clip(lines[seed % len(lines)], 40)
+
+
+def next_step(kit):
+    """A true, useful line under a headline: how to get it, or where."""
+    domain, city = kit.get("domain") or "", (kit.get("city") or "").split(",")[0]
+    if kit.get("ordering") and domain:
+        return f"Order ahead at {domain}"
+    if kit.get("booking") and domain:
+        return f"Book online at {domain}"
+    street = (kit.get("address") or "").split(",")[0].strip()
+    if street and re.match(r"\d", street):
+        return f"Find us at {street}" + (f", {city}" if city else "")
+    return f"{kit.get('name')}, {city}" if city else (kit.get("name") or "")
 
 
 def _clip(text, n):
@@ -264,6 +315,7 @@ KNOWN FOR: {prof.get('signature') or 'n/a'} | OFFERINGS ON THE SITE: {', '.join(
 {('RULES FROM THE CLIENT (always follow them): ' + kit['rules'][:600]) if kit.get('rules') else ''}
 FACTS: {'; '.join(prof.get('facts') or []) or 'n/a'}
 BOOKING/ORDERING LINKS ON THE SITE: {'yes' if kit.get('booking') or kit.get('ordering') else 'no'}
+WHERE: {kit.get('address') or kit.get('city') or 'n/a'}
 WEBSITE TEXT (for facts only):
 {(kit.get('text') or '')[:2500]}
 
@@ -271,14 +323,32 @@ MOMENTS THIS WEEK (calendar, weather, local):
 {json.dumps([{k: m.get(k) for k in ('title', 'date', 'angle', 'kind')} for m in moms[:8]], ensure_ascii=False)}
 TRENDING ONLINE TODAY (use only a safe theme, never the names): {json.dumps(live, ensure_ascii=False)}
 
-Mix: at least one post tied to a moment above, one about what the business actually offers, and one that
-starts a conversation (a question, this-or-that, or a fun local angle). Spread them over the week.
-If a moment suggests a product this business doesn't list (say, pumpkin drinks), write about the feeling of
-the moment instead ("cozy fall mornings"), never the product. Don't describe the weather unless it's listed above.
+WHAT THE WORDS ON THE IMAGE MUST DO: get a local to come in (or order, or book) this week. The image is seen
+for a second while scrolling, so:
+- The headline names something real they sell, from KNOWN FOR, OFFERINGS or the WEBSITE TEXT: a dish, a drink,
+  a cut, a treatment, a class. Never a vague category ("Korean favorites", "fall flavors", "sweet treats", "our
+  delights") and never a line that would fit any business ("Taste the season", "Hello, cozy season", "Treat
+  yourself", "Bite into fall", "Trend or timeless?").
+- It gives a reason to come now: the moment (Halloween weekend, the first cold night, game day), a time of day
+  (lunch break, after work, Saturday morning), or what the item does for them (warms you up, fixes a bad hair
+  week). Only claims the website backs up: no speed, prices, freshness, hours or schedules it doesn't state.
+- Plain, specific and a little mouth-watering, like a confident owner talking to a regular. No puns that need
+  explaining, no exclamation marks.
+Patterns that work, filled with their real items: "[item] for cold nights", "Your lunch break: [item]",
+"Halloween weekend calls for [item]", "[item] or [item]?", "Walk in tired, leave with [service]".
+Subhead: one line under 70 characters with the concrete next step or detail from the site: where (the street
+or neighborhood, if listed), how (order online, book online, walk-ins welcome, only if the site says so), or
+the one true detail that makes the item irresistible.
+
+THE MIX: one post on what they're known for; one that uses a moment above as the reason to come this week (the
+item is the subject, the moment is the reason); one this-or-that between two real items they sell (the image
+asks, the caption asks people to answer in the comments). Spread them over the week.
+If a moment suggests a product this business doesn't list (say, pumpkin drinks), use one of their real items
+instead, never the product. Don't describe the weather unless it's listed above.
 
 Return JSON: {{"posts": [{{"day": "YYYY-MM-DD", "time": "HH:MM", "moment": "the moment's title or ''",
-"idea": "one line, why this post works", "format": "post" or "story" or "reel",
-"eyebrow": "2-4 words above the headline", "headline": "2-6 words", "subhead": "under 90 characters",
+"idea": "one line, why this post brings people in", "format": "post" or "story" or "reel",
+"eyebrow": "2-4 words above the headline", "headline": "2-6 words naming a real item", "subhead": "under 70 characters",
 "cta": "2-4 words", "icon": "one emoji that fits", "photo_subject": "what a photo would show",
 "caption": "...", "hashtags": ["..."], "alt_text": "describes the image for screen readers",
 "reel_script": "for reels only: 3-5 short shots, else ''"}}]}}"""
@@ -330,14 +400,16 @@ def clean_post(p, kit, prof, day, time, source, weather_ok=False, week=None):
                    + "Come say hi this week, and tell us in the comments what you'd love to see from us next!")
     headline = _clip(safe_text(p.get("headline")), 40)
     if not headline or (OFFER_WORDS.search(headline) and not grounded(headline, site, niche, allowed, True)) or \
-            unsupported(headline, site, niche, allowed) or PROMISE.search(headline):
+            unsupported(headline, site, niche, allowed) or PROMISE.search(headline) or \
+            (VAGUE.search(headline) and not names_item(headline, prof, site)):
         moment = safe_text(p.get("moment") or "")
-        headline = _clip(SEASON_LINES.get(moment) or moment or {
+        headline = item_line(prof, niche, seed=day.toordinal()) or _clip(SEASON_LINES.get(moment) or moment or {
             "cafe": "Your daily ritual", "bakery": "Fresh this week", "gym": "Show up for you", "beauty": "Your next look",
             "shop": "Just for you"}.get(niche, "Made for you"), 40)
+    headline = headline.rstrip("!").strip()
     subhead = grounded(safe_text(p.get("subhead")), site, niche, allowed, weather_ok)
     if not subhead or unsupported(subhead, site, niche, allowed):
-        subhead = f"From all of us at {kit.get('name')}" + (f", {kit['city']}" if kit.get("city") else "") + "."
+        subhead = next_step(kit)
     try:
         asked = dt.date.fromisoformat(str(p.get("day")))
         if not week or week[0] <= asked <= week[1]:      # a day outside the week (in the past, say) is ignored
@@ -364,7 +436,7 @@ def clean_post(p, kit, prof, day, time, source, weather_ok=False, week=None):
 def offline_posts(kit, prof, moms, n, start):
     """Posts from templates, for when no AI provider is available. Plain but on-brand and safe."""
     niche = kit.get("niche", "restaurant")
-    name, city = kit.get("name") or "us", (kit.get("city") or "").split(",")[0]
+    name = kit.get("name") or "us"
     rnd = random.Random(f"{name}{start}")
     offer = (prof.get("signature") or (prof.get("offerings") or [""])[0] or "").strip()
     posts = []
@@ -373,9 +445,10 @@ def offline_posts(kit, prof, moms, n, start):
         posts.append({
             "moment": title, "idea": f"Ride {title} while people are already thinking about it.",
             "eyebrow": f"{title}" if len(title) <= 28 else "This week", "icon": m.get("icon", "✨"),
-            "headline": {"day": f"Happy {title}", "holiday": f"Happy {title}", "season": title,
-                         "weather": f"{title}? We've got you", "event": "Big night in town"}.get(m["kind"], title),
-            "subhead": f"Celebrate {m.get('angle') or title} with {name}" + (f" in {city}" if city else "") + ".",
+            "headline": (_clip(f"{title} calls for {offer.lower()}", 40) if offer and len(offer) <= 22 else
+                         {"day": f"Happy {title}", "holiday": f"Happy {title}", "season": title,
+                          "weather": f"{title}? We've got you", "event": "Big night in town"}.get(m["kind"], title)),
+            "subhead": next_step(kit),
             "caption": (f"{title} is here{' ' + m.get('icon', '') if m.get('icon') else ''}! "
                         f"We're celebrating {m.get('angle') or 'it'} at {name}. "
                         + (f"Our {offer} is the perfect excuse to stop by. " if offer else "")
@@ -389,15 +462,17 @@ def offline_posts(kit, prof, moms, n, start):
         "headline": (offer[:36] if offer else {"gym": "Show up for you", "beauty": "Your next look",
                                                "shop": "Just landed", "cafe": "Your daily ritual",
                                                "bakery": "Fresh this morning"}.get(niche, "Made with love")),
-        "subhead": f"From all of us at {name}" + (f", {city}" if city else "") + ".",
+        "subhead": next_step(kit),
         "caption": (f"A little {pillar} from {name}. " + (f"Have you tried our {offer} yet? " if offer else "")
                     + "Tell us your favorite in the comments!"),
         "hashtags": [],
     })
+    pair = [re.sub(r"\s*\([^)]*\)", "", o).strip() for o in (prof.get("offerings") or []) if len(o) <= 18][:2]
     while len(posts) < n:
         posts.append({"moment": "", "idea": "A question gets people talking, which helps the next posts reach more.",
-                      "eyebrow": "Your turn", "icon": "💬", "headline": "This or that?",
-                      "subhead": "Tell us in the comments — we read every one.",
+                      "eyebrow": "Your turn", "icon": "💬",
+                      "headline": f"{pair[0]} or {pair[1]}?" if len(pair) == 2 else "What's your go-to?",
+                      "subhead": "Tell us in the comments, we read every one.",
                       "caption": f"Settle it for us: what's your go-to at {name}? Comment below 👇", "hashtags": []})
     return posts[:n]
 

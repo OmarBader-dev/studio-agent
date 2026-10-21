@@ -1274,6 +1274,32 @@ class PhotoFirstTests(unittest.TestCase):
         self.assertEqual((posts[2]["photo_path"], posts[2]["photo_credit"]), (theme, "Photo by Ana on Pixabay"))
 
 
+class SellingWordsTests(unittest.TestCase):
+    """The words on a post sell a visit: they name something real the business sells."""
+
+    def post(self, headline, subhead="", prof=None, kit=None):
+        site = "Spicy tteokbokki, kimbap rolls and Korean fried chicken. Order online. 1450 N High St, Columbus."
+        prof = prof if prof is not None else {"signature": "Tteokbokki", "offerings": ["Tteokbokki", "Kimbap"]}
+        return social.clean_post({"headline": headline, "subhead": subhead, "caption": "x " * 30},
+                                 dict(KIT, text=site, **(kit or {})), prof, dt.date(2026, 10, 19), "17:00", "test")
+
+    def test_vague_headlines_get_one_that_names_what_they_sell(self):
+        for vague in ("Fall flavors", "Korean favorites", "Taste the season", "Trend or timeless?"):
+            got = self.post(vague)["content"]["headline"]
+            self.assertIn("Tteokbokki", got, vague)
+
+    def test_specific_headlines_stay(self):
+        for good in ("Tteokbokki for cold nights", "Tteokbokki or kimbap?", "Your lunch break: kimbap"):
+            self.assertEqual(self.post(good)["content"]["headline"], good)
+
+    def test_the_line_under_says_how_to_get_it(self):
+        self.assertEqual(social.next_step({"ordering": ["https://x"], "domain": "seoulfood.com"}), "Order ahead at seoulfood.com")
+        self.assertEqual(social.next_step({"booking": ["https://x"], "domain": "salon.com"}), "Book online at salon.com")
+        self.assertEqual(social.next_step({"address": "1450 N High St, Columbus, OH", "city": "Columbus", "name": "X"}),
+                         "Find us at 1450 N High St, Columbus")
+        self.assertEqual(social.next_step({"name": "Joe's", "city": "Columbus"}), "Joe's, Columbus")
+
+
 class PostTextTests(unittest.TestCase):
     def test_dashes_standing_in_for_pauses_become_commas(self):
         self.assertEqual(social.plain_dashes("Fresh—every bite"), "Fresh, every bite")
