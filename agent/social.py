@@ -125,7 +125,7 @@ def hook_line(item, moment, when, niche):
     elif niche in ("restaurant", "bar"):
         line = f"{item} for lunch" if hour < 15 else f"{item} for dinner"
     elif niche in ("cafe", "bakery"):
-        line = f"{item} for your morning" if hour < 12 else f"{item} this afternoon"
+        line = f"Start your day with {item}" if hour < 11 else f"{item} this afternoon"
     elif niche == "beauty":
         line = f"Book your {item.lower()} this week"
     else:
