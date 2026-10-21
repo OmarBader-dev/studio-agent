@@ -3,10 +3,12 @@ browser. Text is fitted to its box automatically, then checked: nothing may over
 
 A design spec is a dict:
   format   post (1080x1350), square, story (1080x1920), landscape (1200x630), gbp (1200x900), flyer (Letter)
-  style    one of styles.STYLES (bold, photo, split, editorial, gradient, brutal, duotone, minimal, retro)
+  style    one of styles.STYLES (bold, photo, split, editorial, gradient, brutal, duotone, minimal, retro, frame,
+           collage, cover)
   brand    the brand kit (colors, fonts, logo, name, photos...)
   content  eyebrow, headline, subhead, cta, badge, footer, icon (a Material Symbol name or an emoji)
   photo    path to a photo, or None
+  photos   for a collage: the photo first, then up to two more
 """
 import base64
 import io
@@ -71,6 +73,24 @@ FIT_JS = """
 """
 
 
+IMAGES_JS = """
+() => {
+  const out = [];
+  for (const img of document.images) {
+    const src = img.currentSrc || img.src;
+    if (src && !src.startsWith('data:') && img.naturalWidth >= 500 && img.naturalHeight >= 360) out.push(src);
+  }
+  for (const el of document.querySelectorAll('div,section,figure,a,span,li,header')) {
+    const r = el.getBoundingClientRect();
+    if (r.width < 400 || r.height < 300) continue;
+    const m = (getComputedStyle(el).backgroundImage || '').match(/url\\(["']?([^"')]+)["']?\\)/);
+    if (m && !m[1].startsWith('data:')) out.push(m[1]);
+  }
+  return [...new Set(out)].slice(0, 60);
+}
+"""
+
+
 def data_uri(path, max_side=1600, quality=84):
     """A file as a data: URI. Photos are shrunk first so designs stay light."""
     path = pathlib.Path(path)
@@ -96,13 +116,25 @@ def data_uri(path, max_side=1600, quality=84):
     return f"data:{kind};base64," + base64.b64encode(buf.getvalue()).decode()
 
 
-def photo_tone(path):
-    """Average brightness (0-1) of a photo, to pick text colors and scrims."""
+def photo_tone(path, aspect=None, band=None):
+    """Average brightness (0-1) of a photo, to pick text colors and scrims. aspect (width / height of the
+    design) looks only at the part a cover crop shows; band (top, bottom as shares of it) at a strip of that."""
     from PIL import Image
     try:
         with Image.open(path) as im:
-            small = im.convert("L").resize((32, 32))
-            px = list(small.getdata())
+            im = im.convert("L")
+            w, h = im.size
+            if aspect:
+                if w / h > aspect:
+                    cut = (w - h * aspect) / 2
+                    im = im.crop((int(cut), 0, int(w - cut), h))
+                else:
+                    cut = (h - w / aspect) / 2
+                    im = im.crop((0, int(cut), w, int(h - cut)))
+            if band:
+                ww, hh = im.size
+                im = im.crop((0, int(band[0] * hh), ww, max(int(band[0] * hh) + 1, int(band[1] * hh))))
+            px = list(im.resize((32, 32)).getdata())
     except Exception:
         return 0.5
     return sum(px) / len(px) / 255
@@ -154,6 +186,11 @@ def build(spec):
         "photo_uri": data_uri(spec["photo"]) if spec.get("photo") and os.path.exists(spec["photo"]) else None,
         "photo_tone": photo_tone(spec["photo"]) if spec.get("photo") and os.path.exists(spec["photo"]) else 0.5,
     }
+    if ctx["photo_uri"]:                       # how light the parts under the words are, for the scrims
+        ctx["photo_tone_top"] = photo_tone(spec["photo"], w / h, (0, .45))
+        ctx["photo_tone_bottom"] = photo_tone(spec["photo"], w / h, (.55, 1))
+    extra = [p for p in (spec.get("photos") or [])[1:3] if p and os.path.exists(p)]      # a collage's other photos
+    ctx["photo_uris"] = ([ctx["photo_uri"]] if ctx["photo_uri"] else []) + [data_uri(p, 1100) for p in extra]
     body_html, css = styles.STYLES[style](ctx)
     font_link = fonts.css_url([typ["heading"], typ["body"]], icons=True)
     root = (f":root{{--w:{w}px;--h:{h}px;--primary:{pal['primary']};--secondary:{pal['secondary']};"
@@ -233,6 +270,25 @@ class Renderer:
         finally:
             page.close()
         return out_path, issues
+
+    def images_on(self, url, timeout=25000):
+        """Big pictures a page shows once its scripts have run (site builders often load them late)."""
+        page = self._browser.new_page(viewport={"width": 1280, "height": 900})
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=timeout)
+            for _ in range(5):                                   # lazy pictures load as the page scrolls
+                page.mouse.wheel(0, 1400)
+                page.wait_for_timeout(400)
+            try:
+                page.wait_for_load_state("networkidle", timeout=8000)
+            except Exception:
+                pass
+            page.wait_for_timeout(600)
+            return page.evaluate(IMAGES_JS)
+        except Exception:
+            return []
+        finally:
+            page.close()
 
     def screenshot(self, url, out_path, w=1280, h=800):
         page = self._browser.new_page(viewport={"width": w, "height": h})

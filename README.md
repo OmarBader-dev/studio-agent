@@ -17,7 +17,9 @@ Together they find clients and serve them:
    map data. Chains, sold or hijacked websites, and departments of big organizations are skipped.
 2. **Make each one a free sample.** A private page with a week of posts made for them, in their own brand,
    tied to what's coming up, with captions they can copy, a short Reel of the first post, and a brand board
-   showing their kit.
+   showing their kit. Every post leads with a photo: their own, the best first (posters and promo graphics
+   from their site are left out), then a photo of the post's moment, like pumpkins for Halloween, never one
+   standing in for their food, products or place.
 3. **Email it** (or, when there's no public email, send it to you on Telegram with a DM to copy for their
    Instagram or Facebook). Two short follow-ups. Replies come to you on Telegram.
 4. **Serve clients.** Each week it plans and designs their posts (plus story versions, a Reel and a post for

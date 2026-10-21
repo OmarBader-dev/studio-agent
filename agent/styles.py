@@ -43,7 +43,7 @@ def logo(ctx, on="dark", cls="logo"):
             " boxed" if tone == "boxed" else "")
         return f'<div class="{klass}"><img class="{cls}" src="{uri}" alt=""></div>'
     name = ctx["brand"].get("name") or ""
-    return f'<div class="wordmark">{e(name)}</div>'
+    return f'<div class="wordmark{" onphoto" if on == "photo" else ""}">{e(name)}</div>'
 
 
 def hl(ctx, text, role="headline", cls="", min_px=28, floor=0):
@@ -102,6 +102,8 @@ COMMON = """
 .logo-wrap.chip-dark{background:#151515}
 .logo-wrap.boxed .logo{border-radius:1.6rem}
 .wordmark{font-family:var(--hf);font-weight:var(--hw);font-size:4.4rem;line-height:1;letter-spacing:.01em;max-width:60rem}
+.wordmark.onphoto{background:rgba(0,0,0,.32);padding:1.2rem 2.2rem;border-radius:1.4rem;color:#fff;
+  text-shadow:0 .2rem 1.2rem rgba(0,0,0,.35);backdrop-filter:blur(1.2rem)}
 .cta{display:inline-flex;align-items:center;gap:1.2rem;font-weight:700;font-size:3.6rem;line-height:1.1;padding:2.2rem 4rem;
   border-radius:99rem;max-width:100%;white-space:nowrap;max-height:9rem}
 .foot{font-size:2.6rem;opacity:.85;line-height:1.25;max-height:7rem}
@@ -109,6 +111,11 @@ COMMON = """
 .bullets li{padding-left:4.2rem;position:relative}
 .bullets li:before{content:"";position:absolute;left:0;top:.45em;width:1.8rem;height:1.8rem;border-radius:50%;background:var(--accent)}
 """
+
+
+def _shade(tone):
+    """How dark a scrim must get for white words over a photo this light (0-1)."""
+    return .66 if tone < .5 else (.8 if tone < .68 else .9)
 
 
 # 1. Bold type --------------------------------------------------------------------------------------
@@ -162,13 +169,13 @@ def photo(ctx):
 <div class="ph" style="background-image:url('{ctx['photo_uri']}')"></div><div class="scrim"></div>
 <div class="frame">
   <div class="top">{logo(ctx, "photo")}{badge(ctx)}</div>
-  <div class="txt">{eyebrow(ctx)}{hl(ctx, c.get('headline'), min_px=30, floor=56)}{sub(c.get('subhead'))}
+  <div class="txt">{hl(ctx, c.get('headline'), min_px=30, floor=56)}{sub(c.get('subhead'))}
   <div class="row">{cta(ctx)}{footer(ctx)}</div></div>
 </div>"""
     css = COMMON + f"""
 .ph{{position:absolute;inset:0;background-size:cover;background-position:center}}
-.scrim{{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.38) 0%,rgba(0,0,0,0) 22%,rgba(0,0,0,0) 38%,
-  rgba(0,0,0,.62) 66%,rgba(0,0,0,.86) 100%)}}
+.scrim{{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.34) 0%,rgba(0,0,0,0) 20%,rgba(0,0,0,0) 40%,
+  rgba(0,0,0,{_shade(ctx.get('photo_tone_bottom', .5)) * .7:.2f}) 68%,rgba(0,0,0,{_shade(ctx.get('photo_tone_bottom', .5)) + .1:.2f}) 100%)}}
 .frame{{position:absolute;inset:0;padding:{pad(ctx)};display:flex;flex-direction:column;justify-content:space-between;color:#fff}}
 .top{{display:flex;justify-content:space-between;align-items:flex-start}}
 .txt{{display:flex;flex-direction:column;gap:2.6rem;{'max-width:70%' if wide else ''}}}
@@ -199,7 +206,7 @@ def split(ctx):
     body = f"""
 <div class="ph" style="background-image:url('{ctx['photo_uri']}');{ph_pos}"></div>
 <div class="panel" style="{panel}">
-  <div class="inner">{eyebrow(ctx)}{hl(ctx, c.get('headline'), min_px=28, floor=50)}{sub(c.get('subhead'))}
+  <div class="inner">{hl(ctx, c.get('headline'), min_px=28, floor=50)}{sub(c.get('subhead'))}
   <div class="row">{cta(ctx)}{footer(ctx)}</div></div>
 </div>
 <div class="lg">{logo(ctx, "photo")}</div>{badge(ctx)}"""
@@ -229,7 +236,6 @@ def split(ctx):
 def editorial(ctx):
     c, k = ctx["content"], ctx["kind"]
     wide = k == "wide"
-    num = f"No. {(ctx['seed'] % 40) + 3:02d}"
     fallback_icon = '<span class="ms mic">auto_awesome</span>'
     medallion = icon(ctx, "mic") or fallback_icon
     photo_style = "background-image:url('" + (ctx["photo_uri"] or "") + "')"
@@ -241,7 +247,7 @@ def editorial(ctx):
     body = f"""
 <div class="paper"></div>
 <div class="frame">
-  <div class="top"><span class="kick">{e(c.get('eyebrow') or ctx['brand'].get('name') or '')}</span><span class="num">{num}</span></div>
+  <div class="top"><span class="kick">{e(c.get('eyebrow') or ctx['brand'].get('name') or '')}</span></div>
   <div class="rule"></div>
   <div class="body">
     <div class="copy">{hl(ctx, c.get('headline'), min_px=30, floor=54)}{sub(c.get('subhead'), 'sub ital')}{bullets(ctx)}</div>
@@ -493,6 +499,124 @@ def retro(ctx):
     return body, css
 
 
+# Photo-led layouts for samples and clients' posts: the picture does the talking, the words stay short -----
+def _mark(ctx):
+    """The logo for a brand-color band."""
+    return logo(ctx, "dark" if colors.luminance(ctx["pal"]["primary"]) < .4 else "light")
+
+
+BAND_CSS = """
+.mat{{position:absolute;inset:0;background:var(--primary)}}
+.pic,.cell{{position:relative;overflow:hidden;background:var(--dark)}}
+.ph{{position:absolute;inset:0;background-size:cover;background-position:center}}
+.band{{position:absolute;bottom:0;display:flex;align-items:flex-end;justify-content:space-between;gap:4rem;color:var(--on-primary)}}
+.words{{display:flex;flex-direction:column;gap:1.8rem;min-width:0;flex:1}}
+.hl{{color:var(--on-primary)}}
+.sub{{font-size:3.4rem;line-height:1.3;opacity:.9}}
+.mark{{flex:none;max-width:26rem;display:flex;justify-content:flex-end}}
+.mark .logo-wrap .logo{{max-height:8rem;max-width:24rem}}
+.mark .logo-wrap.chip{{padding:1.2rem 1.8rem;border-radius:1.6rem}}
+.mark .wordmark{{font-size:3.2rem;text-align:right;color:var(--on-primary)}}
+.badge{{position:absolute;background:var(--accent);color:var(--on-accent);border-radius:99rem;padding:1.6rem 3rem;
+  font-weight:800;font-size:3.2rem;line-height:1.1;max-width:44rem;box-shadow:0 .8rem 2.4rem rgba(0,0,0,.2)}}
+.badge span{{display:block;max-height:8rem}}
+"""
+
+
+# 10. Framed: the photo inset on a brand-color mat, the words beneath it, like a printed card -------------
+def frame(ctx):
+    if not ctx["photo_uri"]:
+        return bold(ctx)
+    c, k = ctx["content"], ctx["kind"]
+    if k == "wide":
+        return split(ctx)
+    tall, square = k == "tall", k == "square"
+    m = 5.5                                                     # the mat around the photo, in rem
+    top = 12 if tall else m
+    ph_h = 100 if tall else (58 if square else 79)
+    hsize = (9 if ctx["type"]["condensed"] else 7.6) * (.9 if square else 1)
+    body = f"""
+<div class="mat"></div>
+<div class="pic" style="position:absolute;left:{m}rem;right:{m}rem;top:{top}rem;height:{ph_h}rem;border-radius:1.6rem">
+  <div class="ph" style="background-image:url('{ctx['photo_uri']}')"></div></div>
+<div class="frame band" style="left:{m + .5}rem;right:{m + .5}rem;top:{top + ph_h}rem">
+  <div class="words">{hl(ctx, c.get('headline'), min_px=28, floor=50)}{sub(c.get('subhead'))}</div>
+  <div class="mark">{_mark(ctx)}</div>
+</div>{badge(ctx)}"""
+    css = COMMON + BAND_CSS.format() + f"""
+.band{{padding:{'4.5rem 0 17rem' if tall else '3.8rem 0 5.5rem'}}}
+.hl{{font-size:{hsize}rem;max-height:{'30rem' if tall else '19rem'}}}
+.sub{{max-height:{'13rem' if tall else '9rem'}}}
+.badge{{right:{m + 3}rem;top:{top + 3}rem;transform:rotate(-3deg)}}
+"""
+    return body, css
+
+
+# 11. Collage: two or three of their photos edge to edge, the words on a brand-color band ------------------
+def collage(ctx):
+    uris = [u for u in ctx.get("photo_uris") or [] if u]
+    if len(uris) < 2:
+        return frame(ctx)
+    c, k = ctx["content"], ctx["kind"]
+    if k == "wide":
+        return split(ctx)
+    tall, square = k == "tall", k == "square"
+    three = len(uris) >= 3
+    grid_h = 112 if tall else (62 if square else 83)
+    cells = "".join(f'<div class="cell{" big" if i == 0 else ""}"><div class="ph" style="background-image:url(\'{u}\')"></div></div>'
+                    for i, u in enumerate(uris[:3]))
+    hsize = (8.6 if ctx["type"]["condensed"] else 7.2) * (.9 if square else 1)
+    body = f"""
+<div class="mat"></div>
+<div class="grid" style="height:{grid_h}rem">{cells}</div>
+<div class="frame band" style="left:6rem;right:6rem;top:{grid_h}rem">
+  <div class="words">{hl(ctx, c.get('headline'), min_px=28, floor=48)}{sub(c.get('subhead'))}</div>
+  <div class="mark">{_mark(ctx)}</div>
+</div>{badge(ctx)}"""
+    css = COMMON + BAND_CSS.format() + f"""
+.grid{{position:absolute;left:0;right:0;top:0;display:grid;gap:1.1rem;
+  grid-template-columns:{'1.3fr 1fr' if three else '1fr 1fr'};grid-template-rows:{'1fr 1fr' if three else '1fr'}}}
+.cell.big{{grid-row:{'1 / span 2' if three else 'auto'}}}
+.band{{padding:{'4rem 0 17rem' if tall else '3.6rem 0 5.5rem'}}}
+.hl{{font-size:{hsize}rem;max-height:{'30rem' if tall else '18rem'}}}
+.sub{{max-height:{'13rem' if tall else '8.5rem'}}}
+.badge{{right:4rem;top:{'15rem' if tall else '4rem'};transform:rotate(-3deg)}}
+"""
+    return body, css
+
+
+# 12. Cover: a full-bleed photo with the headline set large at the top, like a magazine cover --------------
+def cover(ctx):
+    if not ctx["photo_uri"]:
+        return gradient(ctx)
+    c, k = ctx["content"], ctx["kind"]
+    if k == "wide":
+        return photo(ctx)
+    hsize = (12.5 if ctx["type"]["condensed"] else 10.5) * (.86 if k == "square" else 1)
+    body = f"""
+<div class="ph" style="background-image:url('{ctx['photo_uri']}')"></div><div class="scrim"></div>
+<div class="frame">
+  <div class="txt">{hl(ctx, c.get('headline'), min_px=32, floor=58)}{sub(c.get('subhead'))}</div>
+  <div class="row">{logo(ctx, "photo")}{badge(ctx)}</div>
+</div>"""
+    css = COMMON + f"""
+.ph{{position:absolute;inset:0;background-size:cover;background-position:center}}
+.scrim{{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,{_shade(ctx.get('photo_tone_top', .5)):.2f}) 0%,
+  rgba(0,0,0,{_shade(ctx.get('photo_tone_top', .5)) * .6:.2f}) 30%,rgba(0,0,0,0) 54%,rgba(0,0,0,0) 72%,
+  rgba(0,0,0,{_shade(ctx.get('photo_tone_bottom', .5)) * .6:.2f}) 100%)}}
+.frame{{position:absolute;inset:0;padding:{pad(ctx)};display:flex;flex-direction:column;justify-content:space-between;color:#fff}}
+.txt{{display:flex;flex-direction:column;gap:2.4rem;max-width:92%}}
+.hl{{font-size:{hsize}rem;max-height:{'50rem' if k=='tall' else '40rem'};text-shadow:0 .4rem 3rem rgba(0,0,0,.3)}}
+.sub{{font-size:3.8rem;line-height:1.3;max-height:15rem;max-width:80rem;text-shadow:0 .2rem 1.6rem rgba(0,0,0,.4)}}
+.row{{display:flex;justify-content:space-between;align-items:flex-end;gap:3rem}}
+.badge{{background:var(--accent);color:var(--on-accent);border-radius:99rem;padding:1.6rem 3rem;font-weight:800;font-size:3.2rem;
+  line-height:1.1;max-width:44rem}}
+.badge span{{display:block;max-height:8rem}}
+"""
+    return body, css
+
+
 STYLES = {"bold": bold, "photo": photo, "split": split, "editorial": editorial, "gradient": gradient,
-          "brutal": brutal, "duotone": duotone, "minimal": minimal, "retro": retro}
-NEEDS_PHOTO = {"photo", "split", "duotone"}
+          "brutal": brutal, "duotone": duotone, "minimal": minimal, "retro": retro, "frame": frame, "collage": collage,
+          "cover": cover}
+NEEDS_PHOTO = {"photo", "split", "duotone", "frame", "collage", "cover"}

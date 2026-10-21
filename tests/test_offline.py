@@ -852,11 +852,15 @@ class StockPhotoTests(unittest.TestCase):
 
         os.environ["PIXABAY_API_KEY"] = "k"
         try:
-            with patched((images.requests, "get", get), (images.web, "download", lambda url, folder: "/tmp/x_1280.jpg")):
+            with patched((images.requests, "get", get), (images.web, "download", lambda url, folder: "/tmp/x_1280.jpg"),
+                         (images, "CACHE", pathlib.Path(tempfile.mkdtemp()))):
                 got = images.stock(cfg, "pumpkins autumn", orientation="portrait")
+                again = images.stock(cfg, "pumpkins autumn", orientation="portrait")      # kept for a day: no new search
         finally:
             os.environ.pop("PIXABAY_API_KEY", None)
         self.assertEqual(got["credit"], "Photo by Ana on Pixabay")
+        self.assertEqual(again["credit"], "Photo by Ana on Pixabay")
+        self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0][0], "https://pixabay.com/api/")
         self.assertEqual((calls[0][1]["orientation"], calls[0][1]["image_type"]), ("vertical", "photo"))
 
@@ -1207,6 +1211,103 @@ class CommandTests(unittest.TestCase):
         self.assertFalse(meta.due_now({"day": "2999-01-01", "time": "09:00"}, "OH"))
 
 
+def fake_photos(n, size=(1200, 1500)):
+    """n different photo-like pictures (noise and gradients) in a temp folder."""
+    from PIL import Image
+    import random
+    folder, out = pathlib.Path(tempfile.mkdtemp()), []
+    for i in range(n):
+        rnd = random.Random(i)
+        im = Image.new("RGB", (48, 60))
+        im.putdata([(rnd.randrange(256), (x * 5 + i * 40) % 256, (y * 4 + i * 70) % 256) for y in range(60) for x in range(48)])
+        path = folder / f"p{i}.jpg"
+        im.resize(size).save(path, quality=88)
+        out.append(str(path))
+    return out
+
+
+class PhotoFirstTests(unittest.TestCase):
+    """Samples lead every post with a picture: their own photos first, then a photo of the moment."""
+
+    class FakeRenderer:
+        def __init__(self):
+            self.specs = []
+
+        def render(self, spec, out_path):
+            self.specs.append(spec)
+            return pathlib.Path(out_path), []
+
+    def kit(self, photos):
+        return dict(KIT, niche="restaurant", name="Joe's Pizza",
+                    photos=[{"path": p, "url": f"https://joespizza.com/{i}.jpg", "score": 1 - i / 10} for i, p in enumerate(photos)])
+
+    def posts(self, moments=("Halloween", "", "Fall flavors")):
+        return [{"moment": m, "content": {"headline": f"Post {i}"}} for i, m in enumerate(moments)]
+
+    def test_their_photos_lead_every_post_best_first_and_a_collage_when_plenty(self):
+        r, photos = self.FakeRenderer(), fake_photos(6)
+        posts = designer.design_photo_first(cfg_for_tests(), temp_store(), r, self.kit(photos), self.posts(),
+                                            tempfile.mkdtemp(), seed=3)
+        self.assertTrue(all(p["photo_path"] for p in posts))
+        self.assertEqual(posts[0]["photo_path"], photos[0])                     # the best photo comes first
+        self.assertEqual(len({p["style"] for p in posts}), 3)                   # three different layouts
+        firsts = [p["photo_path"] for p in posts]
+        self.assertEqual(len(set(firsts)), 3)                                   # no photo leads twice
+        for p in posts:
+            if p["style"] == "collage":
+                self.assertEqual(len(p["photo_paths"]), 3)
+                self.assertFalse(set(p["photo_paths"][1:]) & set(firsts))
+
+    def test_a_moment_photo_fills_in_but_never_for_a_plain_post(self):
+        r, asked = self.FakeRenderer(), []
+        theme = fake_photos(1)[0]
+
+        def stock(cfg, q, orientation="portrait", vary=""):
+            asked.append((q, vary))
+            return {"path": theme, "credit": "Photo by Ana on Pixabay"}
+        with patched((designer.images, "stock", stock)):
+            posts = designer.design_photo_first(cfg_for_tests(), temp_store(), r, self.kit(fake_photos(1)),
+                                                self.posts(), tempfile.mkdtemp())
+        self.assertEqual(asked, [("autumn leaves", "Joe's Pizza")])              # the Halloween post had their photo;
+        self.assertIsNone(posts[1]["photo_path"])                               # a post without a moment gets none
+        self.assertIn(posts[1]["style"], ("bold", "gradient"))
+        self.assertEqual((posts[2]["photo_path"], posts[2]["photo_credit"]), (theme, "Photo by Ana on Pixabay"))
+
+
+class PhotoFinderTests(unittest.TestCase):
+    def test_big_versions_on_site_builders(self):
+        self.assertEqual(brand.upsize("https://static.wixstatic.com/media/ab12_c3~mv2.jpg/v1/fill/w_147,h_98,al_c,q_80,blur_2/x.jpg"),
+                         "https://static.wixstatic.com/media/ab12_c3~mv2.jpg")
+        self.assertEqual(brand.upsize("https://images.squarespace-cdn.com/content/v1/5f/abc/IMG_1.jpg?format=300w"),
+                         "https://images.squarespace-cdn.com/content/v1/5f/abc/IMG_1.jpg?format=1500w")
+        self.assertEqual(brand.upsize("https://cafe.com/wp-content/uploads/2024/05/latte-300x200.jpg"),
+                         "https://cafe.com/wp-content/uploads/2024/05/latte.jpg")
+        self.assertEqual(brand.upsize("https://cdn.shopify.com/s/files/1/shop/files/mug_400x.jpg?v=1&width=400"),
+                         "https://cdn.shopify.com/s/files/1/shop/files/mug.jpg?v=1")
+
+    def test_srcsets_with_commas_inside_addresses(self):
+        html = ('<img src="x.jpg" srcset="https://static.wixstatic.com/media/a~mv2.jpg/v1/fill/w_147,h_98/a.jpg 147w, '
+                'https://static.wixstatic.com/media/a~mv2.jpg/v1/fill/w_980,h_653/a.jpg 980w">')
+        self.assertEqual(brand.photo_candidates(html, "https://salon.com/"),
+                         ["https://static.wixstatic.com/media/a~mv2.jpg/v1/fill/w_980,h_653/a.jpg"])
+
+    def test_social_feeds_banners_and_the_same_photo_twice_are_skipped(self):
+        photos = fake_photos(2) + fake_photos(1, size=(2100, 400))
+        files = {"https://cafe.com/a.jpg": photos[0], "https://cafe.com/a-copy.jpg": photos[0],
+                 "https://scontent.cdninstagram.com/b.jpg": photos[1], "https://cafe.com/strip.jpg": photos[2],
+                 "https://cafe.com/c.jpg": photos[1]}
+        with patched((brand.web, "download", lambda url, folder, **kw: pathlib.Path(files[url]) if url in files else None),
+                     (brand, "has_lettering", lambda path: False)):
+            got = brand.pick_photos(list(files), tempfile.mkdtemp())
+        self.assertEqual(sorted(p["url"] for p in got), ["https://cafe.com/a.jpg", "https://cafe.com/c.jpg"])
+
+    def test_without_the_text_reader_the_rough_check_is_used(self):
+        seen = []
+        with patched((brand.shutil, "which", lambda name: None), (brand, "text_heavy", lambda path: seen.append(path) or True)):
+            self.assertTrue(brand.has_lettering("x.jpg"))
+        self.assertEqual(seen, ["x.jpg"])
+
+
 class RenderTests(unittest.TestCase):
     """Renders a real design with the headless browser (skipped where no browser is available)."""
 
@@ -1224,6 +1325,12 @@ class RenderTests(unittest.TestCase):
                 path, issues = r.render({"format": "post", "style": style, "brand": KIT, "content": content}, out / f"{style}.png")
                 self.assertTrue(path.exists())
                 self.assertEqual(issues, [], style)
+            photos = fake_photos(3)
+            for fmt in ("post", "square", "story"):                     # the photo-led layouts, with photos
+                for style in ("photo", "split", "frame", "collage", "cover"):
+                    path, issues = r.render({"format": fmt, "style": style, "brand": KIT, "content": content,
+                                             "photo": photos[0], "photos": photos}, out / f"{fmt}-{style}.png")
+                    self.assertEqual(issues, [], f"{fmt} {style}")
             from agent import motion
             if motion.available():                     # a one-second Reel, to check the video pipeline end to end
                 video = motion.render(r, {"format": "story", "style": "bold", "brand": KIT, "content": content},

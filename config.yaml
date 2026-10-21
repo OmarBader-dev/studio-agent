@@ -52,7 +52,7 @@ ai:
 
 images:
   ai_backgrounds: true                # Cloudflare Workers AI makes abstract backgrounds (never fake food or products)
-  stock_photos: true                  # Pexels (free key) or Openverse (no key) when a business has no photos
+  stock_photos: true                  # a photo of a post's moment (pumpkins for Halloween) when the business's own run out
 
 trends:
   country: "US"

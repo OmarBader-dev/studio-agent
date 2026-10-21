@@ -69,6 +69,11 @@ jobs:
       - name: Video tool for Reels (ffmpeg, if this machine doesn't have it)
         run: command -v ffmpeg >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
 
+      # Reads the words in a website's pictures, so posters and promo graphics aren't used as photos.
+      - name: Text reader for picking photos (Tesseract)
+        if: contains(fromJSON('["daily", "sample", "kit", "week", "design"]'), inputs.command || 'daily')
+        run: command -v tesseract >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq tesseract-ocr) || true
+
       # Font lists, design trends and client brand kits, kept between runs to save time.
       - uses: actions/cache@v4
         with:

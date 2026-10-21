@@ -11,6 +11,8 @@ import base64
 import hashlib
 import json
 import re
+import time
+import zlib
 
 import requests
 
@@ -27,40 +29,77 @@ def _name(*parts):
     return hashlib.sha1("|".join(parts).encode()).hexdigest()[:16]
 
 
-def stock(cfg, query, orientation="portrait"):
-    """A free theme photo: {'path', 'credit', 'url'} or None."""
+def _searched(source, query, orientation, fetch):
+    """A stock search's results, kept for a day (Pixabay asks for that, and it spares everyone's free limits)."""
+    path = CACHE / "stock-searches.json"
+    key = f"{source}|{query}|{orientation}"
+    try:
+        saved = json.loads(path.read_text())
+    except (OSError, ValueError):
+        saved = {}
+    now = time.time()
+    hit = saved.get(key)
+    if hit and now - hit.get("at", 0) < 86400:
+        return hit["items"]
+    items = fetch()
+    if items is not None:
+        saved = {k: v for k, v in saved.items() if now - v.get("at", 0) < 86400}
+        saved[key] = {"at": now, "items": items}
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(saved))
+        except OSError:
+            pass
+    return items or []
+
+
+def _turn(items, vary):
+    """The same search gives different businesses different photos: start at a place picked by vary."""
+    if not items or not vary:
+        return items
+    i = zlib.crc32(vary.encode()) % len(items)
+    return items[i:] + items[:i]
+
+
+def stock(cfg, query, orientation="portrait", vary=""):
+    """A free theme photo: {'path', 'credit', 'url'} or None. vary (a business's name, say) picks among the best
+    results, so two businesses with the same moment don't get the same picture."""
     if not cfg["images"].get("stock_photos"):
         return None
     FOLDER.mkdir(parents=True, exist_ok=True)
     key = cfg.secret("PEXELS_API_KEY")
     try:
         if key:
-            r = requests.get("https://api.pexels.com/v1/search", headers={"Authorization": key}, timeout=20,
-                             params={"query": query, "orientation": orientation, "per_page": 5})
-            photos = r.json().get("photos", []) if r.status_code == 200 else []
-            if photos:
-                p = photos[0]
-                path = web.download(p["src"].get("large2x") or p["src"]["large"], FOLDER)
+            def pexels():
+                r = requests.get("https://api.pexels.com/v1/search", headers={"Authorization": key}, timeout=20,
+                                 params={"query": query, "orientation": orientation, "per_page": 6})
+                return [{"src": p["src"].get("large2x") or p["src"]["large"], "by": p.get("photographer"), "url": p.get("url")}
+                        for p in r.json().get("photos", [])] if r.status_code == 200 else None
+            for p in _turn(_searched("pexels", query, orientation, pexels), vary):
+                path = web.download(p["src"], FOLDER)
                 if path:
-                    return {"path": str(path), "credit": f"Photo by {p.get('photographer', 'Pexels')} on Pexels",
-                            "url": p.get("url")}
+                    return {"path": str(path), "credit": f"Photo by {p.get('by') or 'Pexels'} on Pexels", "url": p.get("url")}
         pixabay = cfg.secret("PIXABAY_API_KEY")
         if pixabay:                             # free key; its license allows commercial use, photos are downloaded
-            r = requests.get("https://pixabay.com/api/", timeout=20,
-                             params={"key": pixabay, "q": query[:100], "image_type": "photo", "safesearch": "true",
-                                     "orientation": "vertical" if orientation == "portrait" else "horizontal",
-                                     "min_width": 900, "per_page": 5})
-            for hit in (r.json().get("hits", []) if r.status_code == 200 else []):
-                path = web.download(hit.get("largeImageURL") or hit.get("webformatURL"), FOLDER)
+            def search():
+                r = requests.get("https://pixabay.com/api/", timeout=20,
+                                 params={"key": pixabay, "q": query[:100], "image_type": "photo", "safesearch": "true",
+                                         "orientation": "vertical" if orientation == "portrait" else "horizontal",
+                                         "min_width": 900, "per_page": 6})
+                return [{"src": h.get("largeImageURL") or h.get("webformatURL"), "by": h.get("user"), "url": h.get("pageURL")}
+                        for h in r.json().get("hits", [])] if r.status_code == 200 else None
+            for h in _turn(_searched("pixabay", query, orientation, search), vary):
+                path = web.download(h["src"], FOLDER)
                 if path:
-                    return {"path": str(path), "credit": f"Photo by {hit.get('user') or 'Pixabay'} on Pixabay",
-                            "url": hit.get("pageURL")}
-        r = requests.get("https://api.openverse.org/v1/images/", timeout=20, headers={"User-Agent": web.API_UA},
-                         params={"q": query, "license_type": "commercial,modification", "page_size": 8,
-                                 "aspect_ratio": "tall" if orientation == "portrait" else "wide", "mature": "false"})
-        for item in (r.json().get("results", []) if r.status_code == 200 else []):
-            if (item.get("width") or 0) < 900:
-                continue
+                    return {"path": str(path), "credit": f"Photo by {h.get('by') or 'Pixabay'} on Pixabay", "url": h.get("url")}
+        def openverse():
+            r = requests.get("https://api.openverse.org/v1/images/", timeout=20, headers={"User-Agent": web.API_UA},
+                             params={"q": query, "license_type": "commercial,modification", "page_size": 8,
+                                     "aspect_ratio": "tall" if orientation == "portrait" else "wide", "mature": "false"})
+            return [{k: item.get(k) for k in ("url", "width", "title", "creator", "license", "foreign_landing_url")}
+                    for item in r.json().get("results", [])] if r.status_code == 200 else None
+        for item in _turn([i for i in _searched("openverse", query, orientation, openverse) if (i.get("width") or 0) >= 900],
+                          vary):
             path = web.download(item.get("url"), FOLDER)
             if path:
                 credit = f"\"{item.get('title') or 'Photo'}\" by {item.get('creator') or 'unknown'} ({(item.get('license') or '').upper()})"

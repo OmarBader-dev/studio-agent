@@ -6,7 +6,11 @@ Logo, brand colors, fonts, photos, social links, contact details, opening hours 
 import collections
 import html
 import json
+import os
 import re
+import shutil
+import subprocess
+import tempfile
 import time
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -442,36 +446,103 @@ def brand_fonts(page_html, css, niche):
 
 
 # Photos ---------------------------------------------------------------------------------------
-def photo_candidates(page_html, base):
+def _largest(srcset):
+    """The biggest picture in a srcset. Entries are split at a comma followed by a space: addresses on some
+    image servers (Wix) have commas inside them."""
+    parts = [p.strip().split() for p in re.split(r",\s+", (srcset or "").strip()) if p.strip()]
+    parts = [(p[0], int(re.sub(r"\D", "", p[1]) or 0) if len(p) > 1 else 0) for p in parts]
+    return max(parts, key=lambda x: x[1])[0] if parts else None
+
+
+def upsize(url):
+    """The big version of a photo on the common site builders' image servers: their pages often hold small
+    previews and swap in big ones with JavaScript."""
+    m = re.match(r"(https?://static\.wixstatic\.com/media/[^/?#]+)", url or "")
+    if m:
+        return m.group(1)                                   # Wix: the original, not a blurred thumbnail
+    if "squarespace-cdn.com" in url or "static1.squarespace.com" in url:
+        return re.sub(r"\?.*$", "", url) + "?format=1500w"
+    if "cdn.shopify.com" in url:
+        url = re.sub(r"_(?:\d+x\d*|\d*x\d+|pico|icon|thumb|small|compact|medium)(?=\.(?:jpe?g|png|webp)\b)", "", url, flags=re.I)
+        return re.sub(r"([?&])width=\d+&?", r"\1", url).rstrip("?&")
+    if "/wp-content/uploads/" in url:
+        return re.sub(r"-\d{2,4}x\d{2,4}(?=\.(?:jpe?g|png|webp)(?:\?|$))", "", url, flags=re.I)
+    return url
+
+
+def photo_candidates(page_html, base, ld=None):
     urls = []
     for key in ("og:image", "twitter:image", "og:image:url"):
         v = _meta(page_html, key)
         if v:
             urls.append(web.absolute(base, v))
-    for tag in re.findall(r"<img\b[^>]*>", page_html or "", re.I):
+    images = (ld or {}).get("image")
+    for v in (images if isinstance(images, list) else [images]):
+        v = _img(v)
+        if v:
+            urls.append(web.absolute(base, v))
+    for tag in re.findall(r"<(?:img|source)\b[^>]*>", page_html or "", re.I):
         a = _attrs(tag)
         hint = " ".join([a.get("class", ""), a.get("alt", ""), a.get("id", "")]).lower()
         if "logo" in hint or "icon" in hint:
             continue
-        srcset = a.get("srcset") or a.get("data-srcset") or ""
-        best = None
-        if srcset:
-            parts = [p.strip().split() for p in srcset.split(",") if p.strip()]
-            parts = [(p[0], int(re.sub(r"\D", "", p[1]) or 0) if len(p) > 1 else 0) for p in parts]
-            best = max(parts, key=lambda x: x[1])[0] if parts else None
-        src = best or a.get("data-src") or a.get("data-lazy-src") or a.get("src") or ""
+        best = _largest(a.get("srcset") or a.get("data-srcset") or a.get("data-bgset"))
+        src = (best or a.get("data-image") or a.get("data-src") or a.get("data-lazy-src") or a.get("data-original")
+               or a.get("data-bg") or a.get("src") or "")
         if src and not src.startswith("data:") and not re.search(r"\.(svg|gif)(\?|$)|sprite|pixel|spacer", src, re.I):
             urls.append(web.absolute(base, src))
-    for bg in re.findall(r"background(?:-image)?\s*:\s*url\(['\"]?([^'\")]+)['\"]?\)", page_html or "", re.I):
+    for bg in re.findall(r"(?:background(?:-image)?\s*:\s*url\(|data-bg(?:-image|-src)?=)['\"]?([^'\")\s>]+)", page_html or "", re.I):
         if not re.search(r"\.(svg|gif)(\?|$)", bg, re.I):
             urls.append(web.absolute(base, bg))
     seen, out = set(), []
     for u in urls:
-        key = re.sub(r"[?#].*$", "", u)
+        key = re.sub(r"[?#].*$", "", upsize(u))
         if key not in seen:
             seen.add(key)
             out.append(u)
     return out
+
+
+def words_in(path):
+    """The words clear enough to read in a picture and the share of it they cover, using Tesseract (the free
+    text reader, installed on the agent's machine). None when it isn't installed."""
+    exe = shutil.which("tesseract")
+    if not exe:
+        return None
+    from PIL import Image
+    try:
+        with Image.open(path) as im:
+            g = im.convert("L")
+            g.thumbnail((1000, 1000))
+            w, h = g.size
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+                g.save(f.name)
+                tmp = f.name
+        run = subprocess.run([exe, tmp, "stdout", "--psm", "11", "tsv"], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+    finally:
+        try:
+            os.unlink(tmp)
+        except (OSError, NameError):
+            pass
+    words, area = [], 0
+    for line in run.stdout.splitlines()[1:]:
+        f = line.split("\t")
+        if len(f) >= 12 and f[0] == "5" and float(f[10] or 0) >= 70 and sum(ch.isalpha() for ch in f[11]) >= 2:
+            words.append(f[11].strip())
+            area += int(f[8]) * int(f[9])
+    return words, area / max(1, w * h)
+
+
+def has_lettering(path):
+    """True for posters, promo graphics, awards and screenshots: our headline would fight their words. A sign
+    in a photo of the place (two words) is fine."""
+    found = words_in(path)
+    if found is None:
+        return text_heavy(path)                    # without Tesseract: the rough check below
+    words, area = found
+    return sum(1 for x in words if sum(ch.isalpha() for ch in x) >= 3) >= 4 or area >= .05
 
 
 def text_heavy(path):
@@ -492,16 +563,57 @@ def text_heavy(path):
     return strong_rows > 55
 
 
-def pick_photos(cands, folder, want=6, skip=()):
+def photo_score(path):
+    """How good a photo looks leading a post (higher is better): well lit, colorful, sharp, big, not wide."""
+    from PIL import Image, ImageFilter, ImageStat
+    try:
+        with Image.open(path) as im:
+            w, h = im.size
+            rgb = im.convert("RGB").resize((96, 96))
+    except Exception:
+        return 0.0
+    gray = rgb.convert("L")
+    light = ImageStat.Stat(gray).mean[0] / 255
+    sharp = min(1.0, ImageStat.Stat(gray.filter(ImageFilter.FIND_EDGES)).stddev[0] / 40)
+    rg, yb = [], []
+    for r, g, b in rgb.getdata():
+        rg.append(r - g)
+        yb.append((r + g) / 2 - b)
+    mean = lambda xs: sum(xs) / len(xs)
+    sd = lambda xs: (sum((x - mean(xs)) ** 2 for x in xs) / len(xs)) ** .5
+    colorful = min(1.0, ((sd(rg) ** 2 + sd(yb) ** 2) ** .5 + .3 * (mean(rg) ** 2 + mean(yb) ** 2) ** .5) / 90)
+    exposure = max(0.0, 1 - abs(light - .52) * 2.2)          # too dark or washed out reads badly in a feed
+    size = min(1.0, min(w, h) / 1000)
+    shape = 1.0 if h >= w * .75 else .6                      # very wide pictures lose most of themselves in 4:5
+    return round(.34 * exposure + .3 * colorful + .14 * sharp + .12 * size + .1 * shape, 3)
+
+
+def _fingerprint(path):
+    """A tiny picture of the picture, to spot the same photo saved twice at different addresses."""
     from PIL import Image
-    out = []
-    for url in cands[:16]:
-        if len(out) >= want:
+    try:
+        with Image.open(path) as im:
+            g = im.convert("L").resize((9, 8))
+    except Exception:
+        return None
+    px = list(g.getdata())
+    return tuple(px[r * 9 + c] > px[r * 9 + c + 1] for r in range(8) for c in range(8))
+
+
+def pick_photos(cands, folder, want=8, skip=(), deadline=None):
+    from PIL import Image
+    out, prints = [], []
+    for url in cands[:40]:
+        if len(out) >= want or (deadline and time.time() > deadline):
             break
-        if url in skip or re.search(r"logo|favicon|icon|placeholder|badge|seal|award|banner|promo|sale|shipping|"
-                                    r"coupon|discount|offer|flyer|poster|slide|graphic|text|gift-?card|menu", urlparse(url).path, re.I):
+        if url in skip or re.search(r"logo|favicon|icon|placeholder|badge|seal|award|promo|sale|shipping|"
+                                    r"coupon|discount|offer|flyer|poster|graphic|gift-?card|menu", urlparse(url).path, re.I):
             continue
-        path = web.download(url, folder, max_bytes=6_000_000)
+        if re.search(r"instagram|fbcdn|facebook|tiktok", web.host_of(url) or ""):
+            continue                                  # a social feed shown on their site: not taken from there
+        big = upsize(url)
+        path = web.download(big, folder, max_bytes=8_000_000) if big != url else None
+        path = path or web.download(url, folder, max_bytes=6_000_000)
         if not path or path.suffix in (".svg", ".ico", ".gif", ".bin"):
             continue
         try:
@@ -511,16 +623,21 @@ def pick_photos(cands, folder, want=6, skip=()):
                 px = list(small.getdata())
         except Exception:
             continue
-        if min(w, h) < 360 or max(w, h) < 600:
-            continue
+        if min(w, h) < 360 or max(w, h) < 600 or max(w, h) / min(w, h) > 2.4:
+            continue                                  # too small, or a banner strip a post would crop to nothing
         flat = sum(1 for p in px if max(p) - min(p) < 12) / len(px)
         tones = len({(r >> 4, g >> 4, b >> 4) for r, g, b in px})
         if flat > 0.8 or tones < 40:                  # flat colors or few tones: a graphic, not a photo
             continue
-        if text_heavy(path):                          # a promo banner: its own words would clash with ours
+        if has_lettering(path):                       # a promo banner: its own words would clash with ours
             continue
-        out.append({"url": url, "path": str(path), "w": w, "h": h})
-    return out
+        mark = _fingerprint(path)
+        if any(o["path"] == str(path) for o in out) or (mark and any(
+                sum(a != b for a, b in zip(mark, m)) <= 6 for m in prints)):
+            continue                                  # the same photo at another address or size
+        prints.append(mark)
+        out.append({"url": url, "path": str(path), "w": w, "h": h, "score": photo_score(path)})
+    return sorted(out, key=lambda o: -o["score"])            # the best photo leads the first post
 
 
 # Putting it together --------------------------------------------------------------------------
@@ -535,9 +652,36 @@ def offer_page(all_links, site):
     return best
 
 
-def read(url, niche="restaurant", name="", folder=None, fetch_extra=True, budget=60):
+def _unique(photos):
+    """Photos found on several pages, once each."""
+    out, prints = [], []
+    for p in photos:
+        mark = _fingerprint(p["path"])
+        if mark and any(sum(a != b for a, b in zip(mark, m)) <= 6 for m in prints):
+            continue
+        prints.append(mark)
+        out.append(p)
+    return out
+
+
+PHOTO_PAGES = re.compile(r"\b(gallery|photos?|pictures|our (food|space|story|work)|about( us)?|portfolio|lookbook)\b", re.I)
+
+
+def photo_page(all_links, site, skip=()):
+    """A page of the site likely to show more photos: its gallery, or its about page."""
+    for url, text in all_links:
+        if url in skip or re.search(r"\.(pdf|jpe?g|png|gif|webp)(\?|$)", urlparse(url).path, re.I):
+            continue
+        if web.host_of(url).endswith(site) and urlparse(url).path.strip("/") and \
+                (PHOTO_PAGES.search(text or "") or PHOTO_PAGES.search(urlparse(url).path.replace("-", " "))):
+            return url
+    return None
+
+
+def read(url, niche="restaurant", name="", folder=None, fetch_extra=True, budget=60, renderer=None):
     """The brand kit for a website. Never raises for a bad site: returns what it could learn,
-    with 'ok' False when the site couldn't be read. budget: seconds before optional steps are skipped."""
+    with 'ok' False when the site couldn't be read. budget: seconds before optional steps are skipped.
+    renderer (a design.Renderer): also look at the page as a browser shows it, for photos its scripts load."""
     deadline = time.time() + budget
     url = web.normalize(url)
     kit = {"website": url, "domain": web.host_of(url), "niche": niche, "name": name, "ok": False,
@@ -587,7 +731,7 @@ def read(url, niche="restaurant", name="", folder=None, fetch_extra=True, budget
     kit["colors"], kit["color_candidates"] = brand_colors(page.text, css, tone, niche)
     kit["fonts"] = brand_fonts(page.text, css, niche)
     logo_url = [kit["logo"]["url"]] if kit["logo"] else []
-    kit["photos"] = pick_photos(photo_candidates(page.text, base), folder, skip=logo_url) \
+    kit["photos"] = pick_photos(photo_candidates(page.text, base, ld), folder, skip=logo_url, deadline=deadline - 12) \
         if time.time() < deadline - 10 else []
     text = visible_text(page.text)
     kit["emails_found"] = emails_in(page.text)
@@ -597,9 +741,20 @@ def read(url, niche="restaurant", name="", folder=None, fetch_extra=True, budget
         if p2 and p2.status == 200 and web.is_html(p2) and not web.blocked(p2):
             text += "\n\n[" + (urlparse(extra).path.strip("/") or "page") + "]\n" + visible_text(p2.text, 5000)
             kit["emails_found"] += [x for x in emails_in(p2.text) if x not in kit["emails_found"]]
-            if len(kit["photos"]) < 4:
-                kit["photos"] += pick_photos(photo_candidates(p2.text, p2.url), folder, want=4 - len(kit["photos"]),
-                                             skip=logo_url + [p["url"] for p in kit["photos"]])
+            if len(kit["photos"]) < 5:
+                kit["photos"] += pick_photos(photo_candidates(p2.text, p2.url), folder, want=5 - len(kit["photos"]),
+                                             skip=logo_url + [p["url"] for p in kit["photos"]], deadline=deadline - 8)
+    gallery = photo_page(all_links, site, skip=[extra]) if fetch_extra and len(kit["photos"]) < 5 else None
+    if gallery and time.time() < deadline - 10:
+        p3 = web.fetch(gallery, limit=1_500_000)
+        if p3 and p3.status == 200 and web.is_html(p3) and not web.blocked(p3):
+            kit["photos"] += pick_photos(photo_candidates(p3.text, p3.url), folder, want=6 - len(kit["photos"]),
+                                         skip=logo_url + [p["url"] for p in kit["photos"]], deadline=deadline - 6)
+    if renderer is not None and len(kit["photos"]) < 3 and time.time() < deadline - 12:
+        shown = [u for u in renderer.images_on(page.url) if web.host_of(u)]      # what its scripts loaded
+        kit["photos"] += pick_photos(shown, folder, want=6 - len(kit["photos"]),
+                                     skip=logo_url + [p["url"] for p in kit["photos"]], deadline=deadline - 2)
+    kit["photos"] = _unique(sorted(kit["photos"], key=lambda o: -o.get("score", 0)))[:8]
     kit["text"] = text[:9000]
     owned = belongs(name, title, text)
     if owned is not True:

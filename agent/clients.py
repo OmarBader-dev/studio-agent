@@ -120,12 +120,13 @@ def make_week(cfg, store, renderer, client, site_root, start=None):
     n = int(client.get("posts_per_week") or cfg["offer"]["posts_per_week"])
     posts = social.plan(cfg, store, kit, radar, n=n, start=start)
     work = CACHE / "clients" / key / start.isoformat()
-    designer.design_posts(cfg, store, renderer, kit, posts, work, extra_images=True, seed=start.toordinal())
+    designer.design_posts(cfg, store, renderer, kit, posts, work, extra_images=True, seed=start.toordinal(),
+                          photo_first=True)
     stories = []
     if client.get("stories", True):
         stories = [dict(p, content=dict(p["content"]), format="story") for p in posts[:2]]
         designer.design_posts(cfg, store, renderer, kit, stories, work / "stories", fmt="story", extra_images=True,
-                              seed=start.toordinal() + 50)
+                              seed=start.toordinal() + 50, photo_first=True)
     reel = None
     if client.get("reels", True) and posts:                # the week's first post as a short video
         reel = designer.reel(renderer, kit, stories[0] if stories else posts[0], work / "reel.mp4", seed=start.toordinal())

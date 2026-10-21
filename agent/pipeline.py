@@ -87,7 +87,7 @@ def make_sample(cfg, store, renderer, cand, radar_for, site_root, posts_n=3, for
                                      "socials", "maps_url", "source")}
     if not force and inside_bigger_site(cand["website"], cand["name"]):
         return dict(lead, status="skipped", skip_reason="its page is part of a bigger organization's website")
-    kit = brand.read(cand["website"], niche=cand["niche"], name=cand["name"], budget=45)
+    kit = brand.read(cand["website"], niche=cand["niche"], name=cand["name"], budget=50, renderer=renderer)
     if not kit["ok"]:
         return dict(lead, status="skipped", skip_reason=kit.get("problem", "website didn't load"))
     if kit.get("chain_hint"):
@@ -110,7 +110,7 @@ def make_sample(cfg, store, renderer, cand, radar_for, site_root, posts_n=3, for
     posts = social.plan(cfg, store, kit, radar, n=posts_n, start=dt.date.today(), span=14)
     token = packs.new_token()
     work = CACHE / "samples" / token
-    designer.design_posts(cfg, store, renderer, kit, posts, work, fmt="post", seed=random.randint(0, 999))
+    designer.design_posts(cfg, store, renderer, kit, posts, work, fmt="post", seed=random.randint(0, 999), photo_first=True)
     board = designer.brand_board(renderer, kit, work / "brand-board.png")
     reel = None
     if posts and store.usage("sample_reels", period="day") < cfg["limits"]["sample_reels_per_day"]:

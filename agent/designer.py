@@ -1,6 +1,7 @@
 """The graphic design agent: picks styles for a brand (its niche, its look, this week's design trends),
 picks photos, renders each design and checks it, and makes the brand board."""
 import html
+import os
 import pathlib
 import random
 import re
@@ -60,9 +61,84 @@ def fallback_styles(kit, fmt, first):
     return [s for s in order if s != first and s not in styles.NEEDS_PHOTO][:3]
 
 
-def design_posts(cfg, store, renderer, kit, posts, out_dir, fmt="post", extra_images=False, seed=0):
+# Photo-led layouts, best first for each kind of business (a collage takes three of their photos).
+PHOTO_LAYOUTS = {
+    "restaurant": ["photo", "frame", "collage", "split", "cover"],
+    "cafe": ["frame", "photo", "collage", "cover", "split"],
+    "bakery": ["frame", "collage", "photo", "split", "cover"],
+    "gym": ["cover", "photo", "split", "duotone", "frame"],
+    "beauty": ["frame", "cover", "photo", "collage", "split"],
+    "shop": ["frame", "collage", "photo", "cover", "split"],
+    "bar": ["photo", "cover", "frame", "collage", "split"],
+    "pets": ["photo", "frame", "collage", "cover", "split"],
+}
+TYPE_ONLY = {"gym": ["bold", "brutal"], "pets": ["brutal", "bold"]}      # when there's no picture at all
+
+
+def photo_layouts(kit, seed=0):
+    """The niche's photo-led layouts: its favorite first, the others in an order that varies by business."""
+    order = list(PHOTO_LAYOUTS.get(kit.get("niche"), PHOTO_LAYOUTS["restaurant"]))
+    rest = order[1:]
+    random.Random(f"{kit.get('name')}-{seed}").shuffle(rest)
+    return order[:1] + rest
+
+
+def design_photo_first(cfg, store, renderer, kit, posts, out_dir, fmt="post", seed=0, theme_photos=True):
+    """Every post led by a picture: the business's own photos first (best first, none twice while others are
+    left), then a theme photo for the post's moment (pumpkins for Halloween, never a stand-in for their food,
+    products or place), then their photos again in a new layout, and only then a type-only design."""
+    out_dir = pathlib.Path(out_dir)
+    own = [p["path"] for p in kit.get("photos") or [] if p.get("path") and os.path.exists(p["path"])]
+    pool = list(own)
+    layouts = photo_layouts(kit, seed)
+    type_only = TYPE_ONLY.get(kit.get("niche"), ["bold", "gradient"])
+    used = []
+    for i, post in enumerate(posts):
+        later = len(posts) - i - 1
+        photos, credits = [], []
+        if pool:
+            photos.append(pool.pop(0))
+        elif theme_photos:
+            q = images.theme_query(post)
+            found = images.stock(cfg, q, vary=kit.get("name") or "") if q else None
+            if found:
+                photos.append(found["path"])
+                credits.append(found.get("credit"))
+        if not photos and len(own) >= 2:
+            photos.append(own[i % len(own)])
+        if photos:
+            style = None
+            for layout in layouts:
+                if layout in used:
+                    continue
+                if layout == "collage":
+                    if len(pool) < 2 + later:            # it takes two more of their photos: only when there are plenty
+                        continue
+                    photos += [pool.pop(), pool.pop()]   # the least good ones; the best lead their own posts
+                style = layout
+                break
+            style = style or "photo"
+            fallbacks = [x for x in layouts if x not in (style, "collage")]
+        else:
+            style = type_only[i % len(type_only)]
+            fallbacks = [x for x in type_only if x != style] + ["bold"]
+        used.append(style)
+        f = "story" if post.get("format") == "story" and fmt == "post" else fmt
+        spec = {"format": f, "style": style, "brand": kit, "content": post["content"],
+                "photo": photos[0] if photos else None, "photos": photos, "seed": seed + i}
+        name = re.sub(r"[^a-z0-9]+", "-", f"{i + 1}-{post.get('moment') or style}".lower()).strip("-")[:40]
+        path, style_used, issues = design.render_best(renderer, spec, out_dir / f"{name}.png", fallbacks)
+        post.update(image=str(path), style=style_used, issues=issues, size=f, photo_path=photos[0] if photos else None,
+                    photo_paths=photos, photo_credit="; ".join(c for c in credits if c) or None)
+    return posts
+
+
+def design_posts(cfg, store, renderer, kit, posts, out_dir, fmt="post", extra_images=False, seed=0, photo_first=False):
     """Render one design per post. extra_images: allow theme stock photos and AI backgrounds (client work).
+    photo_first: lead every post with a picture (samples and clients' posts; see design_photo_first).
     Returns the posts with 'image', 'style' and 'issues' added."""
+    if photo_first and fmt in ("post", "square", "story"):
+        return design_photo_first(cfg, store, renderer, kit, posts, out_dir, fmt, seed)
     out_dir = pathlib.Path(out_dir)
     photos = [p["path"] for p in kit.get("photos") or [] if p.get("path")]
     picks = choose_styles(kit, len(posts), fmt, seed=seed, has_photo=bool(photos) or extra_images)
@@ -100,7 +176,8 @@ def reel(renderer, kit, post, out_path, seed=0):
     out_path = pathlib.Path(out_path)
     style = post.get("style") or "bold"
     spec = {"format": "story", "style": style, "brand": kit, "content": post["content"],
-            "photo": post.get("photo_path") if style in styles.NEEDS_PHOTO else None, "seed": seed}
+            "photo": post.get("photo_path") if style in styles.NEEDS_PHOTO else None,
+            "photos": post.get("photo_paths") if style in styles.NEEDS_PHOTO else None, "seed": seed}
     if style in styles.NEEDS_PHOTO and not spec["photo"]:
         spec["style"] = style = fallback_styles(kit, "story", style)[0]
     _, used, issues = design.render_best(renderer, spec, out_path.with_suffix(".png"),
