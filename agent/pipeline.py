@@ -94,7 +94,9 @@ def make_sample(cfg, store, renderer, cand, radar_for, site_root, posts_n=3, for
         return dict(lead, status="skipped", skip_reason="chain or franchise")
     kit.update(city=cand["city"], state=cand["state"], category=cand["category"], niche=cand["niche"])
     email = best_email(cand, kit)
-    if email and (store.is_suppressed(email) or store.find_by_email(email)):
+    same = store.find_by_email(email) if email else None
+    if email and (store.is_suppressed(email) or (same and same.get("id") != lead["id"])):   # a new sample for the
+        # same business (asked for again) replaces its old one
         return dict(lead, status="skipped", skip_reason="opted out before" if store.is_suppressed(email)
                     else "same email as another business")
     socials = dict(kit.get("socials") or {})

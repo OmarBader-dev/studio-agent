@@ -126,7 +126,7 @@ class Session:
         if lead["status"] == "skipped" and lead.get("skip_reason") != "no email and no social pages to message":
             telegram(self.cfg, f"Skipped {esc(name)}: {esc(lead.get('skip_reason'))}.")
             return
-        lead["status"] = "manual" if not lead.get("email") else "ready"
+        lead["status"] = "manual"     # you send it yourself: automatic emails only go to the US businesses it finds
         lead["from_telegram"] = True
         self.store.add(lead)
         self.samples.append(lead)
@@ -327,8 +327,11 @@ class Session:
         for lead in self.samples:
             if base:
                 lead["sample_url"] = f"{base}/s/{lead['token']}/"
+                shown = (f"\n\nTheir website shows {esc(lead['email'])}. Samples you ask for are never emailed "
+                         "automatically, so send it yourself if it suits them." if lead.get("email") else "")
                 telegram(self.cfg, f"<b>Sample for {esc(lead['name'])}</b>: {link(lead['sample_url'], 'open it')}\n\n"
-                                   f"Message to send them (tap to copy):\n<pre>{esc(pipeline.dm_draft(self.cfg, lead))}</pre>")
+                                   f"Message to send them (tap to copy):\n<pre>{esc(pipeline.dm_draft(self.cfg, lead))}</pre>"
+                                   + shown)
                 lead["handed_over"] = iso()
             else:
                 telegram(self.cfg, f"Made a sample for {esc(lead['name'])}, but Cloudflare isn't set up to publish it.")

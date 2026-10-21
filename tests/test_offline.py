@@ -1087,6 +1087,44 @@ class CommandTests(unittest.TestCase):
         self.assertIn("/design CLIENT", sent[0])
         self.assertIn("don't know", sent[1])
 
+    def test_samples_you_ask_for_are_never_emailed_automatically(self):
+        cfg, store, sent = cfg_for_tests(), temp_store(), []
+        kit = {"ok": True, "domain": "alo.es", "name": "Alo", "website": "https://alo.es", "title": "Alo", "text": "",
+               "socials": {}}
+
+        def make(cfg, store, renderer, cand, radar_for, root, force=False):
+            return dict(cand, status="ready", email="info@alo.es", token="t1")
+        with patched((commands.brand, "read", lambda *a, **k: kit), (commands.pipeline, "make_sample", make),
+                     (commands, "telegram", lambda c, t: sent.append(t)),
+                     (commands.publish, "configured", lambda c: True),
+                     (commands.publish, "deploy", lambda c, root: {"url": "https://abc.x.pages.dev"}),
+                     (commands.publish, "remember", lambda *a: None), (commands.publish, "write_removed", lambda *a: [])):
+            s = commands.Session(cfg, store)
+            s._renderer = object()                           # no browser needed here
+            s.sample("https://alo.es")
+            s.finish()
+        self.assertEqual(store.leads["tg:alo.es"]["status"], "manual")
+        self.assertEqual(pipeline.email_queue(cfg, store), [])
+        self.assertIn("Their website shows info@alo.es", sent[-1])
+
+    def test_asking_again_for_the_same_business_makes_a_new_sample(self):
+        cfg, store = cfg_for_tests(), temp_store()
+        store.add({"id": "tg:alo.es", "name": "Alo", "email": "info@alo.es", "status": "manual"})
+        store.add({"id": "ov:2", "name": "Other", "email": "hello@other.com", "status": "emailed"})
+        kit = {"ok": True, "domain": "alo.es", "website": "https://alo.es", "emails_found": [], "socials": {}}
+        cand = {"id": "tg:alo.es", "name": "Alo", "niche": "restaurant", "category": "restaurant", "city": "",
+                "state": "", "website": "https://alo.es", "emails": ["info@alo.es"], "socials": []}
+        stop = RuntimeError("past the duplicate check")
+
+        def plan(*a, **k):
+            raise stop
+        with patched((pipeline.brand, "read", lambda *a, **k: kit), (pipeline.social, "plan", plan)):
+            with self.assertRaises(RuntimeError):                              # its old email doesn't block it
+                pipeline.make_sample(cfg, store, None, cand, lambda city: {}, None, force=True)
+            other = pipeline.make_sample(cfg, store, None, dict(cand, id="tg:other.com", emails=["hello@other.com"]),
+                                         lambda city: {}, None, force=True)
+        self.assertEqual(other["skip_reason"], "same email as another business")
+
     def test_meta_due_now(self):
         self.assertTrue(meta.due_now({"day": "2020-01-01", "time": "09:00"}, "OH"))
         self.assertFalse(meta.due_now({"day": "2999-01-01", "time": "09:00"}, "OH"))
