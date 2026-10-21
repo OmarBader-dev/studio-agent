@@ -94,6 +94,22 @@ def _rest(store, provider, seconds):
     store.flag("ai_rest", rest)
 
 
+def _wait_seconds(r):
+    """How long a 429 asks to wait: the Retry-After header, "try again in 1m2.5s" (Groq), or Gemini's
+    retryDelay. None when it doesn't say."""
+    try:
+        return float((getattr(r, "headers", None) or {}).get("retry-after"))
+    except (TypeError, ValueError):
+        pass
+    text = getattr(r, "text", "") or ""
+    m = re.search(r"try again in ((?:\d+(?:\.\d+)?(?:ms|h|m|s))+)", text) or \
+        re.search(r'"retryDelay":\s*"((?:\d+(?:\.\d+)?s))"', text)
+    if not m:
+        return None
+    return sum(float(n) * {"h": 3600, "m": 60, "s": 1, "ms": 0.001}[u]
+               for n, u in re.findall(r"(\d+(?:\.\d+)?)(ms|h|m|s)", m.group(1)))
+
+
 def _until_tomorrow():
     t = now()
     return max(600, 86400 - (t.hour * 3600 + t.minute * 60 + t.second) + 300)
@@ -213,8 +229,20 @@ def _call(cfg, store, provider, system, prompt, max_tokens, temperature, json_mo
     else:
         raise NoAI(provider)
     if r.status_code == 429:
-        _rest(store, provider, 120 if provider == "pollinations" or "free-models-per-min" in r.text else _until_tomorrow())
-        raise NoAI(f"{provider}: rate limited" + (" (today's free requests are used up)" if "per-day" in r.text else ""))
+        daily = bool(re.search(r"per[\s_-]?day|\((?:TPD|RPD)\)", r.text or "", re.I))
+        wait = _wait_seconds(r)
+        if wait is None and re.search(r"per[\s_-]?min|\((?:TPM|RPM)\)", r.text or "", re.I):
+            wait = 60
+        if provider == "pollinations":
+            wait = 120
+        # a per-minute limit (Groq's free tier hits one with almost every big answer) is a short pause; only a
+        # used-up day, or a limit that doesn't say how long, rests the provider until tomorrow
+        seconds = _until_tomorrow() if daily or wait is None else min(wait, _until_tomorrow())
+        _rest(store, provider, seconds)
+        e = NoAI(f"{provider}: rate limited" + (" (today's free requests are used up)" if daily else
+                                                 f" for {seconds:.0f}s" if seconds < 3600 else ""))
+        e.wait = seconds if seconds <= 45 else None
+        raise e
     if r.status_code >= 400:
         if r.status_code in (401, 403):
             _rest(store, provider, _until_tomorrow())
@@ -238,7 +266,14 @@ def ask(cfg, store, prompt, system=None, json_mode=True, max_tokens=2000, temper
         if _resting(store, provider):
             continue
         try:
-            text, used = _call(cfg, store, provider, system, prompt, max_tokens, temperature, json_mode)
+            try:
+                text, used = _call(cfg, store, provider, system, prompt, max_tokens, temperature, json_mode)
+            except NoAI as e:
+                if not getattr(e, "wait", None):
+                    raise
+                print(f"AI: {e}; waiting, then asking it again")       # better than a weaker model's answer
+                time.sleep(e.wait + 1)                                  # (its pause is over by then)
+                text, used = _call(cfg, store, provider, system, prompt, max_tokens, temperature, json_mode)
         except (NoAI, requests.RequestException, KeyError, IndexError, ValueError, TypeError) as e:
             print(f"AI: {str(e)[:160]}")
             continue
@@ -251,15 +286,40 @@ def ask(cfg, store, prompt, system=None, json_mode=True, max_tokens=2000, temper
             data_used = data if isinstance(data, dict) else {"items": data}
             data_used.setdefault("_model", used)
             return data_used
-        print(f"AI: {used} didn't return JSON")
+        print(f"AI: {used} didn't return JSON ({_shape(text)})")
     return None
 
 
+def _shape(text):
+    """What a non-JSON reply looked like, without its words."""
+    t = (text or "").strip()
+    if not t:
+        return "empty"
+    hints = [f"{len(t)} chars"]
+    if "<think>" in t:
+        hints.append("thinking left in" if "</think>" in t else "only thinking, cut off")
+    elif t.count("{") > t.count("}"):
+        hints.append("cut off")
+    elif "{" not in t:
+        hints.append("no braces")
+    return ", ".join(hints)
+
+
 def parse_json(text):
-    """The JSON object in a model's reply, even when wrapped in prose or code fences."""
+    """The JSON object in a model's reply, even when wrapped in prose, code fences or "thinking" tags, or with
+    trailing commas."""
     if not text:
         return None
+    text = re.sub(r"(?s)<think>.*?</think>", "", text)
     t = re.sub(r"^```(?:json)?|```$", "", text.strip(), flags=re.M).strip()
+    data = _loads(t)
+    if data is not None:
+        return data
+    return _loads(re.sub(r",(\s*[}\]])", r"\1", t))
+
+
+def _loads(t):
+    """json.loads on the reply, or on the first complete object or list in it."""
     try:
         return json.loads(t)
     except ValueError:

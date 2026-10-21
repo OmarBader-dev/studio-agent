@@ -987,6 +987,66 @@ class CheckTests(unittest.TestCase):
         self.assertNotIn("data policy", out.getvalue())                      # the error text stays on Telegram
 
 
+class RateLimitTests(unittest.TestCase):
+    """Free tiers have per-minute limits (Groq's is hit by almost every big answer): those are a short pause."""
+
+    class Resp:
+        def __init__(self, status, data, headers=None):
+            self.status_code, self.data, self.headers = status, data, headers or {}
+            self.text = json.dumps(data)
+
+        def json(self):
+            return self.data
+
+    def test_how_long_a_limit_asks_to_wait(self):
+        R = self.Resp
+        self.assertEqual(ai._wait_seconds(R(429, {}, {"retry-after": "7"})), 7)
+        self.assertAlmostEqual(ai._wait_seconds(R(429, {"error": {"message": "Please try again in 1m2.5s."}})), 62.5)
+        self.assertAlmostEqual(ai._wait_seconds(R(429, {"error": {"message": "Please try again in 523ms."}})), 0.523)
+        self.assertEqual(ai._wait_seconds(R(429, {"error": {"details": [{"retryDelay": "36s"}]}})), 36)
+        self.assertIsNone(ai._wait_seconds(R(429, {"error": {"message": "Too many requests"}})))
+
+    def ask_groq(self, limited):
+        cfg, store, slept, asked = cfg_for_tests(), temp_store(), [], []
+        os.environ["GROQ_API_KEY"] = "k"
+        listed = self.Resp(200, {"data": [{"id": "openai/gpt-oss-120b"}]})
+
+        def post(url, **kw):
+            asked.append(url)
+            if len(asked) == 1:
+                return limited
+            return self.Resp(200, {"choices": [{"message": {"content": '{"ok": true}'}}]})
+        try:
+            with patched((ai.requests, "get", lambda url, **kw: listed), (ai.requests, "post", post),
+                         (ai.time, "sleep", lambda s: slept.append(s))):
+                got = ai.ask(cfg, store, "hi")
+        finally:
+            os.environ.pop("GROQ_API_KEY", None)
+        return got, slept, asked, store
+
+    def test_a_per_minute_limit_waits_and_asks_the_same_model_again(self):
+        tpm = self.Resp(429, {"error": {"message": "Rate limit reached for model `openai/gpt-oss-120b` on tokens per "
+                                                   "minute (TPM): Limit 8000, Used 7000. Please try again in 9.4s."}},
+                        {"retry-after": "10"})
+        got, slept, asked, store = self.ask_groq(tpm)
+        self.assertEqual(got, {"ok": True, "_model": "groq:openai/gpt-oss-120b"})
+        self.assertEqual((slept, len(asked)), ([11], 2))
+
+    def test_a_used_up_day_rests_until_tomorrow(self):
+        tpd = self.Resp(429, {"error": {"message": "Rate limit reached for model `openai/gpt-oss-120b` on tokens per "
+                                                   "day (TPD): Limit 200000. Please try again in 7m12s."}})
+        got, slept, asked, store = self.ask_groq(tpd)
+        self.assertIsNone(got)
+        self.assertEqual((slept, len(asked)), ([], 1))
+        self.assertTrue(ai._resting(store, "groq"))
+
+    def test_answers_with_thinking_or_trailing_commas_still_read(self):
+        self.assertEqual(ai.parse_json('<think>maybe {"a": 2}?</think>\n{"a": 1}'), {"a": 1})
+        self.assertEqual(ai.parse_json('```json\n{"a": [1, 2,], "b": "x",}\n```'), {"a": [1, 2], "b": "x"})
+        self.assertEqual(ai._shape('<think>still going {"a"'), "23 chars, only thinking, cut off")
+        self.assertEqual(ai._shape('{"posts": [{"a": 1}'), "19 chars, cut off")
+
+
 class OpenRouterTests(unittest.TestCase):
     """Its free models run on other companies' servers, which are sometimes busy or down for a while."""
 

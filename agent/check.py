@@ -52,6 +52,8 @@ def _ask(cfg, store, provider):
                            "verify the Google account, then make a new key, or ask Google to review it" + code)
         if re.search(r" 40[13]\b|API.key.not.valid|API_KEY_INVALID|Authentication error", text, re.I):
             return False, "the key was refused: copy it again" + code
+        if "rate limited for" in text:          # a per-minute limit: the agent waits a moment and asks again
+            return True, "the key works; it was busy for a moment (the agent waits and asks again)"
         if "used up" in text:
             return False, "today's free requests are used up (it tries again tomorrow)" + code
         if "rate limited" in text or " 429" in text:

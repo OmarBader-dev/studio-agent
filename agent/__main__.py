@@ -73,6 +73,8 @@ def cmd_daily(cfg, store):
             leads = pipeline.prospect_today(cfg, store, r, root)
             store.flag("prospect_date", today)
             store.save()
+            if leads:
+                print("Samples written by:", dict(collections.Counter(l.get("ai") or "built-in templates" for l in leads)))
         for client in clients.due(cfg, store):
             try:
                 start = clients.week_start()
