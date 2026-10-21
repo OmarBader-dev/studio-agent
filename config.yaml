@@ -72,7 +72,7 @@ autopilot:
 
 # "draft": finds businesses, makes their samples and writes the emails into data/outbox, but sends nothing.
 # "live": sends emails and follow-ups for real. Switch once you've checked a few drafts.
-mode: "draft"
+mode: "live"
 
 # "card": a personal email with a small preview of the sample designs. "plain": text only.
 email_style: "card"
