@@ -101,6 +101,38 @@ def names_item(text, prof, site=""):
                for terms in PRODUCTS.values() for t in terms)
 
 
+PLACEHOLDER = re.compile(r"<[^<>]{1,30}>|\[[^\[\]]{1,30}\]|\{[^{}]{1,30}\}")
+FOOD = ("restaurant", "cafe", "bakery", "bar")
+
+
+def bare_item(headline, prof):
+    """True when a headline is only one of their items' names, with no reason to come."""
+    low = re.sub(r"[^a-z0-9 ]", "", headline.lower()).strip()
+    items = [prof.get("signature") or ""] + list(prof.get("offerings") or [])
+    return any(low == re.sub(r"[^a-z0-9 ]", "", re.sub(r"\s*\([^)]*\)", "", i.lower())).strip() for i in items if i)
+
+
+def hook_line(item, moment, when, niche):
+    """An item with a reason to come now: the moment, or the time of day the post goes out."""
+    item = re.sub(r"\s*\([^)]*\)", "", item or "").strip(" .,")
+    if not item:
+        return ""
+    m = (moment or "").strip()
+    seasonal = not m or re.search(r"season|flavou?rs|\bfall\b|autumn|winter|spring|summer|weekend", m, re.I)
+    hour = int(when[:2]) if re.match(r"\d{1,2}:", when or "") else 12
+    if m and not seasonal and len(m) <= 22:
+        line = f"{m} calls for {item}" if niche in FOOD else f"{item} for {m}"
+    elif niche in ("restaurant", "bar"):
+        line = f"{item} for lunch" if hour < 15 else f"{item} for dinner"
+    elif niche in ("cafe", "bakery"):
+        line = f"{item} for your morning" if hour < 12 else f"{item} this afternoon"
+    elif niche == "beauty":
+        line = f"Book your {item.lower()} this week"
+    else:
+        line = f"Come try {item} this week"
+    return line if len(line) <= 40 else (item if len(item) <= 40 else "")
+
+
 def item_line(prof, niche, seed=0):
     """A headline that names what they sell, for when the written one didn't: plain, true, a reason to come."""
     item = re.sub(r"\s*\([^)]*\)", "", prof.get("signature") or (prof.get("offerings") or [""])[0] or "").strip(" .,")
@@ -332,8 +364,12 @@ for a second while scrolling, so:
 - It gives a reason to come now: the moment (Halloween weekend, the first cold night, game day), a time of day
   (lunch break, after work, Saturday morning), or what the item does for them (warms you up, fixes a bad hair
   week). Only claims the website backs up: no speed, prices, freshness, hours or schedules it doesn't state.
+- A headline that is only the item's name is not enough: pair it with the reason ("Tteokbokki for cold nights",
+  not "Tteokbokki").
 - Plain, specific and a little mouth-watering, like a confident owner talking to a regular. No puns that need
   explaining, no exclamation marks.
+- Never write placeholders like <street> or [location]: what the site doesn't say, leave out. Never invent plans
+  for the business (an event, a themed item, a session, "this Friday") that the site doesn't announce.
 Patterns that work, filled with their real items: "[item] for cold nights", "Your lunch break: [item]",
 "Halloween weekend calls for [item]", "[item] or [item]?", "Walk in tired, leave with [service]".
 Subhead: one line under 70 characters with the concrete next step or detail from the site: where (the street
@@ -393,12 +429,20 @@ def clean_post(p, kit, prof, day, time, source, weather_ok=False, week=None):
     for extra in HASHTAGS.get(niche, []):
         if len(tags) < 8 and extra.lower() not in [t.lower() for t in tags]:
             tags.append(extra)
-    caption = grounded(safe_text(p.get("caption")), site, niche, allowed, weather_ok)
+    caption = grounded(" ".join(x for x in re.split(r"(?<=[.!?])\s+", safe_text(p.get("caption")))
+                                if not PLACEHOLDER.search(x)), site, niche, allowed, weather_ok)
     if len(caption.split()) < 15:                     # too much was unsupported: fall back to a safe caption
         caption = (f"{safe_text(p.get('headline') or p.get('moment') or 'Something good')} at {kit.get('name')}"
                    + (f", {city_tag(kit.get('city'))}" if kit.get("city") else "") + ". "
                    + "Come say hi this week, and tell us in the comments what you'd love to see from us next!")
-    headline = _clip(safe_text(p.get("headline")), 40)
+    raw = " ".join(safe_text(p.get("headline")).split())
+    headline = "" if PLACEHOLDER.search(raw) else raw
+    if len(headline) > 40:                            # cut short it would end in "...": name one item instead
+        named = next((o for o in [prof.get("signature") or ""] + list(prof.get("offerings") or [])
+                      if o and o.lower() in headline.lower()), "")
+        headline = hook_line(named, p.get("moment"), str(p.get("time") or time), niche) if named else ""
+    if headline and bare_item(headline, prof):        # just a name: give it a reason to come now
+        headline = hook_line(headline, p.get("moment"), str(p.get("time") or time), niche) or headline
     if not headline or (OFFER_WORDS.search(headline) and not grounded(headline, site, niche, allowed, True)) or \
             unsupported(headline, site, niche, allowed) or PROMISE.search(headline) or \
             (VAGUE.search(headline) and not names_item(headline, prof, site)):
@@ -408,7 +452,7 @@ def clean_post(p, kit, prof, day, time, source, weather_ok=False, week=None):
             "shop": "Just for you"}.get(niche, "Made for you"), 40)
     headline = headline.rstrip("!").strip()
     subhead = grounded(safe_text(p.get("subhead")), site, niche, allowed, weather_ok)
-    if not subhead or unsupported(subhead, site, niche, allowed):
+    if not subhead or unsupported(subhead, site, niche, allowed) or PLACEHOLDER.search(subhead):
         subhead = next_step(kit)
     try:
         asked = dt.date.fromisoformat(str(p.get("day")))

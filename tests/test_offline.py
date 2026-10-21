@@ -1292,6 +1292,20 @@ class SellingWordsTests(unittest.TestCase):
         for good in ("Tteokbokki for cold nights", "Tteokbokki or kimbap?", "Your lunch break: kimbap"):
             self.assertEqual(self.post(good)["content"]["headline"], good)
 
+    def test_a_bare_item_gets_its_reason_and_placeholders_never_show(self):
+        self.assertEqual(self.post("Tteokbokki")["content"]["headline"], "Tteokbokki for dinner")      # 17:00 post
+        halloween = social.clean_post({"headline": "Kimbap", "moment": "Halloween", "caption": "x " * 30},
+                                      dict(KIT, text="kimbap and tteokbokki"), {"offerings": ["Kimbap"]},
+                                      dt.date(2026, 10, 19), "12:00", "test")
+        self.assertEqual(halloween["content"]["headline"], "Halloween calls for Kimbap")
+        p = self.post("Bowls on <street>", subhead="Grab one at <location> today", kit={"domain": "seoul.com",
+                                                                                          "ordering": ["https://x"]})
+        self.assertNotIn("<", p["content"]["headline"] + p["content"]["subhead"])
+        self.assertEqual(p["content"]["subhead"], "Order ahead at seoul.com")
+        long = self.post("Chocolate Covered Strawberries or Chocolate Martini?",
+                         prof={"offerings": ["Chocolate Martini", "Chocolate Covered Strawberries"]})
+        self.assertNotIn("…", long["content"]["headline"])
+
     def test_the_line_under_says_how_to_get_it(self):
         self.assertEqual(social.next_step({"ordering": ["https://x"], "domain": "seoulfood.com"}), "Order ahead at seoulfood.com")
         self.assertEqual(social.next_step({"booking": ["https://x"], "domain": "salon.com"}), "Book online at salon.com")
