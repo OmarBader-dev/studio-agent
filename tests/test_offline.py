@@ -1302,6 +1302,7 @@ class SellingWordsTests(unittest.TestCase):
                                                                                           "ordering": ["https://x"]})
         self.assertNotIn("<", p["content"]["headline"] + p["content"]["subhead"])
         self.assertEqual(p["content"]["subhead"], "Order ahead at seoul.com")
+        self.assertNotIn(" or ", self.post("Tteokbokki or tteokbokki?")["content"]["headline"])
         long = self.post("Chocolate Covered Strawberries or Chocolate Martini?",
                          prof={"offerings": ["Chocolate Martini", "Chocolate Covered Strawberries"]})
         self.assertNotIn("…", long["content"]["headline"])

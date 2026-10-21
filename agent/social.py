@@ -212,7 +212,7 @@ PROMISE = re.compile(r"\b(give-?aways?|raffles?|contests?|sweepstakes|prizes?|wi
                      r"announce|reward)|helps? us (?:decide|choose|pick)|first \d+ (?:people|customers|guests|callers))\b", re.I)
 CODE = re.compile(r"\b(?:promo |discount |coupon )?code:?\s+[\"']?([A-Za-z0-9]{3,20})\b", re.I)
 # Events the business never announced ("join us for a night of...", "see you tonight!")
-EVENT = re.compile(r"\bjoin us for (?:a|an|our) (?:night|evening|party|celebration|event|bash)\b|\bpart(?:y|ies)\b|"
+EVENT = re.compile(r"\bjoin us for (?:a|an|our) (?:night|evening|party|celebration|event|bash)\b|\bpart(?:y|ies)\b|\bbash\b|"
                    r"\bspecial event\b|\btonight\b", re.I)
 NOT_IN_FEED = re.compile(r"\b(?:swipe|slide) up\b|\bpolls?\b|\bstickers?\b|\b(?:this|the|our) story\b|\blink in (?:the )?story\b",
                          re.I)
@@ -441,6 +441,9 @@ def clean_post(p, kit, prof, day, time, source, weather_ok=False, week=None):
         named = next((o for o in [prof.get("signature") or ""] + list(prof.get("offerings") or [])
                       if o and o.lower() in headline.lower()), "")
         headline = hook_line(named, p.get("moment"), str(p.get("time") or time), niche) if named else ""
+    pair = re.match(r"^(.+?)\s+(?:or|vs\.?)\s+(.+?)\??$", headline, re.I)
+    if pair and pair.group(1).strip().lower() == pair.group(2).strip().lower():
+        headline = ""                                 # "Pierogi or pierogi?" asks nothing
     if headline and bare_item(headline, prof):        # just a name: give it a reason to come now
         headline = hook_line(headline, p.get("moment"), str(p.get("time") or time), niche) or headline
     if not headline or (OFFER_WORDS.search(headline) and not grounded(headline, site, niche, allowed, True)) or \
