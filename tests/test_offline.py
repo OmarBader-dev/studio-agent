@@ -1270,8 +1270,15 @@ class PhotoFirstTests(unittest.TestCase):
                                                 self.posts(), tempfile.mkdtemp())
         self.assertEqual(asked, [("autumn leaves", "Joe's Pizza")])              # the Halloween post had their photo;
         self.assertIsNone(posts[1]["photo_path"])                               # a post without a moment gets none
-        self.assertIn(posts[1]["style"], ("bold", "gradient"))
+        self.assertEqual(posts[1]["style"], "poster")
         self.assertEqual((posts[2]["photo_path"], posts[2]["photo_credit"]), (theme, "Photo by Ana on Pixabay"))
+
+
+class PostTextTests(unittest.TestCase):
+    def test_dashes_standing_in_for_pauses_become_commas(self):
+        self.assertEqual(social.plain_dashes("Fresh—every bite"), "Fresh, every bite")
+        self.assertEqual(social.plain_dashes("Gluten-free – our signature bowl"), "Gluten-free, our signature bowl")
+        self.assertEqual(social.plain_dashes("Open 10–12, Mon–Fri"), "Open 10-12, Mon-Fri")
 
 
 class PhotoFinderTests(unittest.TestCase):
@@ -1301,6 +1308,13 @@ class PhotoFinderTests(unittest.TestCase):
             got = brand.pick_photos(list(files), tempfile.mkdtemp())
         self.assertEqual(sorted(p["url"] for p in got), ["https://cafe.com/a.jpg", "https://cafe.com/c.jpg"])
 
+    def test_svg_logos_say_whether_they_are_light(self):
+        folder = pathlib.Path(tempfile.mkdtemp())
+        (folder / "white.svg").write_text('<svg><style>.a{fill: #fff;}</style><path class="a" d="M0 0h9v9z"/></svg>')
+        (folder / "plain.svg").write_text('<svg><path d="M0 0h9v9z"/></svg>')
+        self.assertEqual(brand.svg_tone(folder / "white.svg"), "light")         # made for a dark header
+        self.assertEqual(brand.svg_tone(folder / "plain.svg"), "dark")          # no color named: drawn in black
+
     def test_without_the_text_reader_the_rough_check_is_used(self):
         seen = []
         with patched((brand.shutil, "which", lambda name: None), (brand, "text_heavy", lambda path: seen.append(path) or True)):
@@ -1327,7 +1341,7 @@ class RenderTests(unittest.TestCase):
                 self.assertEqual(issues, [], style)
             photos = fake_photos(3)
             for fmt in ("post", "square", "story"):                     # the photo-led layouts, with photos
-                for style in ("photo", "split", "frame", "collage", "cover"):
+                for style in ("photo", "split", "full", "frame", "collage", "cover", "panel"):
                     path, issues = r.render({"format": fmt, "style": style, "brand": KIT, "content": content,
                                              "photo": photos[0], "photos": photos}, out / f"{fmt}-{style}.png")
                     self.assertEqual(issues, [], f"{fmt} {style}")

@@ -161,7 +161,7 @@ def type_of(brand, style):
     heading = fonts.find(f.get("heading")) or "Bricolage Grotesque"
     body = fonts.find(f.get("body")) or "Inter"
     if style == "editorial" and not fonts.is_serif(heading) and not f.get("from_site"):
-        heading = "Fraunces"
+        heading = "DM Serif Display"
     upper = fonts.is_condensed(heading) or style in ("bold", "brutal") and not fonts.is_serif(heading)
     return {"heading": heading, "body": body, "hw": fonts.best_weight(heading, 800), "bw": fonts.best_weight(body, 500),
             "upper": upper, "condensed": fonts.is_condensed(heading), "serif": fonts.is_serif(heading)}
@@ -172,6 +172,9 @@ def build(spec):
     fmt = spec.get("format", "post")
     w, h = FORMATS[fmt]
     brand, content = spec.get("brand") or {}, dict(spec.get("content") or {})
+    from .social import plain_dashes
+    content = {k: ([plain_dashes(x) for x in v] if isinstance(v, list) else plain_dashes(v) if isinstance(v, str) else v)
+               for k, v in content.items()}
     style = spec.get("style") or "bold"
     if style not in styles.STYLES:
         style = "bold"

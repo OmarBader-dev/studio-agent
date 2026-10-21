@@ -7,6 +7,7 @@ import collections
 import html
 import json
 import os
+import pathlib
 import re
 import shutil
 import subprocess
@@ -52,7 +53,7 @@ SYSTEM_FONTS = {"sans-serif", "serif", "monospace", "cursive", "fantasy", "syste
                 "segoe ui emoji", "noto color emoji", "emoji", "var", "unset", "fontawesome", "font awesome",
                 "dashicons", "icomoon", "eicons", "material icons", "glyphicons halflings", "revicons"}
 DEFAULT_FONTS = {   # by niche, when a site gives nothing usable: (heading, body)
-    "restaurant": ("Bricolage Grotesque", "Inter"), "cafe": ("Fraunces", "DM Sans"), "bakery": ("Fraunces", "Nunito"),
+    "restaurant": ("Bricolage Grotesque", "Inter"), "cafe": ("Outfit", "DM Sans"), "bakery": ("DM Serif Display", "Nunito"),
     "gym": ("Anton", "Inter"), "beauty": ("Playfair Display", "Lato"), "shop": ("DM Serif Display", "DM Sans"),
     "bar": ("Bebas Neue", "Inter"), "pets": ("Baloo 2", "Nunito"),
 }
@@ -271,8 +272,25 @@ def pick_logo(cands, folder):
     return None
 
 
+def svg_tone(path):
+    """dark / light / mid for an SVG logo, from the colors it's drawn in (an SVG that names none draws in black).
+    A white logo made for a dark header must not land on a white tile."""
+    try:
+        text = pathlib.Path(path).read_text(encoding="utf-8", errors="ignore")[:400_000]
+    except OSError:
+        return "unknown"
+    found = [v for v in re.findall(r"(?:fill|stroke|stop-color)\s*[:=]\s*[\"']?\s*(#[0-9a-fA-F]{3,8}\b|[a-z]+\b|rgba?\([^)]*\))",
+                                   text, re.I) if colors.rgb(v)]
+    if not found:
+        return "dark" if re.search(r"<(path|rect|circle|polygon|text)\b", text) else "unknown"
+    lum = sum(colors.luminance(v) for v in found) / len(found)
+    return "dark" if lum < .25 else "light" if lum > .7 else "mid"
+
+
 def logo_tone(logo):
     """Main colors of the logo and whether it needs a light or dark backing to stay visible."""
+    if logo and logo.get("kind") != "raster" and str(logo.get("path") or "").endswith(".svg"):
+        return {"colors": [], "tone": svg_tone(logo["path"])}
     if not logo or logo["kind"] != "raster":
         return {"colors": [], "tone": "unknown"}
     from PIL import Image

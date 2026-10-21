@@ -25,14 +25,14 @@ MOTION_CSS = """
 @keyframes m-zoom{from{scale:1}to{scale:1.1}}
 .bg,.ph,.t1,.t2,.sky,.sun,.rays,.mesh{animation:m-zoom var(--m-dur) linear both;transform-origin:50% 42%}
 .s-split .ph{animation:none}
-.logo-wrap,.wordmark,.kick,.meta,.num,.inset{animation:m-fade .7s ease-out .2s both}
+.logo-wrap,.wordmark,.kick,.meta,.num,.inset,.sign{animation:m-fade .7s ease-out .2s both}
 .eyebrow{animation:m-rise .7s cubic-bezier(.2,.8,.2,1) .45s both}
 .hl{animation:m-rise .9s cubic-bezier(.2,.8,.2,1) .75s both}
 .medallion,.big,.bigicon{animation:m-pop .8s ease-out 1.1s both}
 .bar,.rule{animation:m-grow .6s ease-out 1.45s both;transform-origin:0 50%}
 .sub,.bullets{animation:m-rise .8s cubic-bezier(.2,.8,.2,1) 1.6s both}
 .cta,.arrow{animation:m-pop .7s ease-out 2.3s both}
-.foot,.badge,.deco,.sticker{animation:m-fade .8s ease-out 2.75s both}
+.foot,.badge,.deco,.sticker,.offer{animation:m-fade .8s ease-out 2.75s both}
 """
 STEP_JS = "(t) => { for (const a of document.getAnimations()) { a.pause(); a.currentTime = t; } return true; }"
 

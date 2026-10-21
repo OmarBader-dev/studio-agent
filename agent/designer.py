@@ -63,16 +63,16 @@ def fallback_styles(kit, fmt, first):
 
 # Photo-led layouts, best first for each kind of business (a collage takes three of their photos).
 PHOTO_LAYOUTS = {
-    "restaurant": ["photo", "frame", "collage", "split", "cover"],
-    "cafe": ["frame", "photo", "collage", "cover", "split"],
-    "bakery": ["frame", "collage", "photo", "split", "cover"],
-    "gym": ["cover", "photo", "split", "duotone", "frame"],
-    "beauty": ["frame", "cover", "photo", "collage", "split"],
-    "shop": ["frame", "collage", "photo", "cover", "split"],
-    "bar": ["photo", "cover", "frame", "collage", "split"],
-    "pets": ["photo", "frame", "collage", "cover", "split"],
+    "restaurant": ["full", "frame", "collage", "panel", "cover"],
+    "cafe": ["frame", "full", "collage", "cover", "panel"],
+    "bakery": ["frame", "collage", "full", "panel", "cover"],
+    "gym": ["cover", "full", "panel", "collage", "frame"],
+    "beauty": ["frame", "cover", "full", "collage", "panel"],
+    "shop": ["frame", "collage", "full", "cover", "panel"],
+    "bar": ["full", "cover", "panel", "collage", "frame"],
+    "pets": ["full", "frame", "collage", "cover", "panel"],
 }
-TYPE_ONLY = {"gym": ["bold", "brutal"], "pets": ["brutal", "bold"]}      # when there's no picture at all
+TYPE_ONLY = {}                                  # when there's no picture at all: a type poster on the brand's color
 
 
 def photo_layouts(kit, seed=0):
@@ -91,7 +91,7 @@ def design_photo_first(cfg, store, renderer, kit, posts, out_dir, fmt="post", se
     own = [p["path"] for p in kit.get("photos") or [] if p.get("path") and os.path.exists(p["path"])]
     pool = list(own)
     layouts = photo_layouts(kit, seed)
-    type_only = TYPE_ONLY.get(kit.get("niche"), ["bold", "gradient"])
+    type_only = TYPE_ONLY.get(kit.get("niche"), ["poster"])
     used = []
     for i, post in enumerate(posts):
         later = len(posts) - i - 1
@@ -121,7 +121,7 @@ def design_photo_first(cfg, store, renderer, kit, posts, out_dir, fmt="post", se
             fallbacks = [x for x in layouts if x not in (style, "collage")]
         else:
             style = type_only[i % len(type_only)]
-            fallbacks = [x for x in type_only if x != style] + ["bold"]
+            fallbacks = [x for x in type_only if x != style] + ["poster", "bold"]
         used.append(style)
         f = "story" if post.get("format") == "story" and fmt == "post" else fmt
         spec = {"format": f, "style": style, "brand": kit, "content": post["content"],

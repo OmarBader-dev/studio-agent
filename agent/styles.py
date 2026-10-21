@@ -113,10 +113,6 @@ COMMON = """
 """
 
 
-def _shade(tone):
-    """How dark a scrim must get for white words over a photo this light (0-1)."""
-    return .66 if tone < .5 else (.8 if tone < .68 else .9)
-
 
 # 1. Bold type --------------------------------------------------------------------------------------
 def bold(ctx):
@@ -499,124 +495,205 @@ def retro(ctx):
     return body, css
 
 
-# Photo-led layouts for samples and clients' posts: the picture does the talking, the words stay short -----
-def _mark(ctx):
-    """The logo for a brand-color band."""
-    return logo(ctx, "dark" if colors.luminance(ctx["pal"]["primary"]) < .4 else "light")
-
-
-BAND_CSS = """
-.mat{{position:absolute;inset:0;background:var(--primary)}}
-.pic,.cell{{position:relative;overflow:hidden;background:var(--dark)}}
+# Quiet Storefront: the system for samples and clients' posts ----------------------------------------------
+# One margin and one radius everywhere, the logo always bottom right, words always left, one headline (two
+# lines at most) and one short line or none, no fake buttons, no labels in spaced capitals, no emoji, the
+# accent spent once (an offer), and a fine grain over everything so different photos sit on the same stock.
+QS = """
+.ground{{position:absolute;inset:0}}
+.pic{{position:absolute;overflow:hidden;background:var(--dark)}}
 .ph{{position:absolute;inset:0;background-size:cover;background-position:center}}
-.band{{position:absolute;bottom:0;display:flex;align-items:flex-end;justify-content:space-between;gap:4rem;color:var(--on-primary)}}
-.words{{display:flex;flex-direction:column;gap:1.8rem;min-width:0;flex:1}}
-.hl{{color:var(--on-primary)}}
-.sub{{font-size:3.4rem;line-height:1.3;opacity:.9}}
-.mark{{flex:none;max-width:26rem;display:flex;justify-content:flex-end}}
-.mark .logo-wrap .logo{{max-height:8rem;max-width:24rem}}
-.mark .logo-wrap.chip{{padding:1.2rem 1.8rem;border-radius:1.6rem}}
-.mark .wordmark{{font-size:3.2rem;text-align:right;color:var(--on-primary)}}
-.badge{{position:absolute;background:var(--accent);color:var(--on-accent);border-radius:99rem;padding:1.6rem 3rem;
-  font-weight:800;font-size:3.2rem;line-height:1.1;max-width:44rem;box-shadow:0 .8rem 2.4rem rgba(0,0,0,.2)}}
-.badge span{{display:block;max-height:8rem}}
-"""
+.grain{{position:absolute;inset:0;background-image:url("{noise}");opacity:.07;mix-blend-mode:overlay;pointer-events:none}}
+.frame{{position:absolute;display:flex;flex-direction:column;justify-content:flex-end}}
+.row{{display:flex;align-items:flex-end;justify-content:space-between;gap:4rem}}
+.words{{display:flex;flex-direction:column;gap:2rem;min-width:0;flex:1}}
+.hl{{letter-spacing:-.02em;line-height:.98}}
+.upper.hl{{letter-spacing:0;line-height:.92}}
+.sub{{font-size:3.6rem;line-height:1.28;max-width:68rem}}
+.sign{{flex:none;display:flex;align-items:center;justify-content:center}}
+.sign img{{display:block;max-height:11rem;max-width:30rem;object-fit:contain}}
+.sign.tile{{background:#fff;border-radius:1.2rem;padding:1.6rem 2rem}}
+.sign.tile img{{max-height:8.5rem;max-width:26rem}}
+.sign.tile.ink{{background:#151515}}
+.sign.boxed img{{border-radius:1.2rem;max-height:12rem}}
+.sign.word{{font-family:var(--hf);font-weight:var(--hw);font-size:3.4rem;line-height:1.2;padding:.1em 0;max-width:34rem;
+  text-align:right}}
+.sign.word.onphoto{{background:rgba(0,0,0,.36);padding:1.2rem 2rem;border-radius:1.2rem;color:#fff}}
+.offer{{position:absolute;width:21rem;height:21rem;border-radius:50%;background:var(--accent);color:var(--on-accent);
+  display:flex;align-items:center;justify-content:center;text-align:center;font-family:var(--hf);font-weight:var(--hw);
+  font-size:3.8rem;line-height:1.02;padding:3rem}}
+.offer span{{display:block;max-height:15rem}}
+""".format(noise=NOISE)
+M = 6                                                   # the margin on every side, in rem (6% of the width)
 
 
-# 10. Framed: the photo inset on a brand-color mat, the words beneath it, like a printed card -------------
-def frame(ctx):
-    if not ctx["photo_uri"]:
-        return bold(ctx)
-    c, k = ctx["content"], ctx["kind"]
-    if k == "wide":
-        return split(ctx)
-    tall, square = k == "tall", k == "square"
-    m = 5.5                                                     # the mat around the photo, in rem
-    top = 12 if tall else m
-    ph_h = 100 if tall else (58 if square else 79)
-    hsize = (9 if ctx["type"]["condensed"] else 7.6) * (.9 if square else 1)
-    body = f"""
-<div class="mat"></div>
-<div class="pic" style="position:absolute;left:{m}rem;right:{m}rem;top:{top}rem;height:{ph_h}rem;border-radius:1.6rem">
-  <div class="ph" style="background-image:url('{ctx['photo_uri']}')"></div></div>
-<div class="frame band" style="left:{m + .5}rem;right:{m + .5}rem;top:{top + ph_h}rem">
-  <div class="words">{hl(ctx, c.get('headline'), min_px=28, floor=50)}{sub(c.get('subhead'))}</div>
-  <div class="mark">{_mark(ctx)}</div>
-</div>{badge(ctx)}"""
-    css = COMMON + BAND_CSS.format() + f"""
-.band{{padding:{'4.5rem 0 17rem' if tall else '3.8rem 0 5.5rem'}}}
-.hl{{font-size:{hsize}rem;max-height:{'30rem' if tall else '19rem'}}}
-.sub{{max-height:{'13rem' if tall else '9rem'}}}
-.badge{{right:{m + 3}rem;top:{top + 3}rem;transform:rotate(-3deg)}}
-"""
-    return body, css
+def _bottom(ctx):
+    """Where words may end: stories keep clear of the app's bottom bar."""
+    return 17 if ctx["kind"] == "tall" else M
 
 
-# 11. Collage: two or three of their photos edge to edge, the words on a brand-color band ------------------
-def collage(ctx):
-    uris = [u for u in ctx.get("photo_uris") or [] if u]
-    if len(uris) < 2:
-        return frame(ctx)
-    c, k = ctx["content"], ctx["kind"]
-    if k == "wide":
-        return split(ctx)
-    tall, square = k == "tall", k == "square"
-    three = len(uris) >= 3
-    grid_h = 112 if tall else (62 if square else 83)
-    cells = "".join(f'<div class="cell{" big" if i == 0 else ""}"><div class="ph" style="background-image:url(\'{u}\')"></div></div>'
-                    for i, u in enumerate(uris[:3]))
-    hsize = (8.6 if ctx["type"]["condensed"] else 7.2) * (.9 if square else 1)
-    body = f"""
-<div class="mat"></div>
-<div class="grid" style="height:{grid_h}rem">{cells}</div>
-<div class="frame band" style="left:6rem;right:6rem;top:{grid_h}rem">
-  <div class="words">{hl(ctx, c.get('headline'), min_px=28, floor=48)}{sub(c.get('subhead'))}</div>
-  <div class="mark">{_mark(ctx)}</div>
-</div>{badge(ctx)}"""
-    css = COMMON + BAND_CSS.format() + f"""
-.grid{{position:absolute;left:0;right:0;top:0;display:grid;gap:1.1rem;
-  grid-template-columns:{'1.3fr 1fr' if three else '1fr 1fr'};grid-template-rows:{'1fr 1fr' if three else '1fr'}}}
-.cell.big{{grid-row:{'1 / span 2' if three else 'auto'}}}
-.band{{padding:{'4rem 0 17rem' if tall else '3.6rem 0 5.5rem'}}}
-.hl{{font-size:{hsize}rem;max-height:{'30rem' if tall else '18rem'}}}
-.sub{{max-height:{'13rem' if tall else '8.5rem'}}}
-.badge{{right:4rem;top:{'15rem' if tall else '4rem'};transform:rotate(-3deg)}}
-"""
-    return body, css
+def _top(ctx):
+    return 13 if ctx["kind"] == "tall" else M
 
 
-# 12. Cover: a full-bleed photo with the headline set large at the top, like a magazine cover --------------
-def cover(ctx):
-    if not ctx["photo_uri"]:
-        return gradient(ctx)
-    c, k = ctx["content"], ctx["kind"]
-    if k == "wide":
+def _ink(bg):
+    """White words wherever they read (3:1 is enough for type this large), else near-black."""
+    return "#ffffff" if colors.contrast("#ffffff", bg) >= 3 else "#151515"
+
+
+def _sign(ctx, ground):
+    """The logo, always bottom right. On a light ground a dark logo stands alone; on a photo or a dark ground it
+    sits on one small white tile, the same in every post. Without a logo, the name in the brand's type."""
+    uri, tone = ctx["logo_uri"], ctx["logo_tone"]
+    if not uri:
+        name = e(ctx["brand"].get("name") or "")
+        return f'<div class="sign word{" onphoto" if ground == "photo" else ""}" style="color:{"#fff" if ground != "light" else "var(--ink)"}">{name}</div>'
+    if tone == "boxed":                                  # a logo on its own colored square needs no tile
+        return f'<div class="sign boxed"><img src="{uri}" alt=""></div>'
+    plain = (ground == "light" and tone in ("dark", "mid", "unknown")) or (ground != "light" and tone == "light")
+    tile = "" if plain else (" tile ink" if tone == "light" else " tile")      # a white logo gets a dark tile
+    return f'<div class="sign{tile}"><img src="{uri}" alt=""></div>'
+
+
+def _words(ctx, size, color, sub_max=90, min_px=30, floor=54):
+    """The headline and, when it's short enough to read at a glance, one supporting line."""
+    c = ctx["content"]
+    h = size * (1.15 if ctx["type"]["condensed"] else 1)
+    line = c.get("subhead") or ""
+    line = line if len(line) <= sub_max else ""
+    return (f'<div class="words" style="color:{color}">'
+            f'<h1 class="hl{" upper" if ctx["type"]["upper"] else ""}" data-fit data-role="headline" data-min="{min_px}" '
+            f'data-floor="{floor}" style="font-size:{h:.2f}rem">{e(c.get("headline"))}</h1>'
+            + (f'<p class="sub" data-fit data-role="subhead" data-min="20" data-floor="24">{e(line)}</p>' if line else "")
+            + "</div>")
+
+
+def _offer(ctx, where):
+    t = ctx["content"].get("badge")
+    if not t:
+        return ""
+    return f'<div class="offer" style="{where}"><span data-fit data-role="badge" data-min="14">{e(t)}</span></div>'
+
+
+def _paper(pal):
+    """The brand's paper: a very light tint of its main color, kept quiet (a pastel would compete with the photo)."""
+    h, _, sat = colors.hls(pal["primary"])
+    return colors.from_hls(h, .935, min(sat, .28))
+
+
+def _shade(tone):
+    """How dark a shade must get under white words over a photo this light (0-1)."""
+    return .62 if tone < .45 else (.76 if tone < .62 else .86)
+
+
+def full(ctx):
+    """The photo, edge to edge; the words at its foot."""
+    if not ctx["photo_uri"] or ctx["kind"] == "wide":
         return photo(ctx)
-    hsize = (12.5 if ctx["type"]["condensed"] else 10.5) * (.86 if k == "square" else 1)
+    k, b = ctx["kind"], _shade(ctx.get("photo_tone_bottom", .5))
+    top = {"tall": 96, "square": 46}.get(k, 62)
     body = f"""
-<div class="ph" style="background-image:url('{ctx['photo_uri']}')"></div><div class="scrim"></div>
-<div class="frame">
-  <div class="txt">{hl(ctx, c.get('headline'), min_px=32, floor=58)}{sub(c.get('subhead'))}</div>
-  <div class="row">{logo(ctx, "photo")}{badge(ctx)}</div>
-</div>"""
-    css = COMMON + f"""
-.ph{{position:absolute;inset:0;background-size:cover;background-position:center}}
-.scrim{{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,{_shade(ctx.get('photo_tone_top', .5)):.2f}) 0%,
-  rgba(0,0,0,{_shade(ctx.get('photo_tone_top', .5)) * .6:.2f}) 30%,rgba(0,0,0,0) 54%,rgba(0,0,0,0) 72%,
-  rgba(0,0,0,{_shade(ctx.get('photo_tone_bottom', .5)) * .6:.2f}) 100%)}}
-.frame{{position:absolute;inset:0;padding:{pad(ctx)};display:flex;flex-direction:column;justify-content:space-between;color:#fff}}
-.txt{{display:flex;flex-direction:column;gap:2.4rem;max-width:92%}}
-.hl{{font-size:{hsize}rem;max-height:{'50rem' if k=='tall' else '40rem'};text-shadow:0 .4rem 3rem rgba(0,0,0,.3)}}
-.sub{{font-size:3.8rem;line-height:1.3;max-height:15rem;max-width:80rem;text-shadow:0 .2rem 1.6rem rgba(0,0,0,.4)}}
-.row{{display:flex;justify-content:space-between;align-items:flex-end;gap:3rem}}
-.badge{{background:var(--accent);color:var(--on-accent);border-radius:99rem;padding:1.6rem 3rem;font-weight:800;font-size:3.2rem;
-  line-height:1.1;max-width:44rem}}
-.badge span{{display:block;max-height:8rem}}
-"""
-    return body, css
+<div class="pic" style="inset:0"><div class="ph" style="background-image:url('{ctx['photo_uri']}')"></div></div>
+<div class="ground" style="background:linear-gradient(180deg,rgba(0,0,0,0) 38%,rgba(0,0,0,{b * .55:.2f}) 62%,rgba(0,0,0,{b:.2f}) 100%)"></div>
+<div class="grain"></div>{_offer(ctx, f"top:{_top(ctx)}rem;right:{M}rem")}
+<div class="frame" style="left:{M}rem;right:{M}rem;top:{top}rem;bottom:{_bottom(ctx)}rem">
+  <div class="row">{_words(ctx, 10, "#ffffff")}{_sign(ctx, "photo")}</div></div>"""
+    return body, COMMON + QS + ".hl{text-shadow:0 .3rem 2.4rem rgba(0,0,0,.25)}"
+
+
+def frame(ctx):
+    """A print on the brand's paper: the photo inset, the words beneath it."""
+    if not ctx["photo_uri"] or ctx["kind"] == "wide":
+        return split(ctx)
+    k, pal = ctx["kind"], ctx["pal"]
+    paper = _paper(pal)
+    ink = colors.readable(pal["primary"], paper, 6)
+    t = _top(ctx)
+    ph_h = {"tall": 104, "square": 56}.get(k, 74)
+    body = f"""
+<div class="ground" style="background:{paper}"></div>
+<div class="pic" style="left:{M}rem;right:{M}rem;top:{t}rem;height:{ph_h}rem;border-radius:1.2rem">
+  <div class="ph" style="background-image:url('{ctx['photo_uri']}')"></div></div>
+<div class="grain"></div>{_offer(ctx, f"top:{t + 3}rem;right:{M + 3}rem")}
+<div class="frame" style="left:{M}rem;right:{M}rem;top:{t + ph_h + 3.5}rem;bottom:{_bottom(ctx)}rem">
+  <div class="row">{_words(ctx, 8, ink, sub_max=80)}{_sign(ctx, "light")}</div></div>"""
+    return body, COMMON + QS + f":root{{--ink:{ink}}}"
+
+
+def collage(ctx):
+    """Two or three real moments, edge to edge; the words on the brand's color."""
+    uris = [u for u in ctx.get("photo_uris") or [] if u]
+    if len(uris) < 2 or ctx["kind"] == "wide":
+        return frame(ctx)
+    k, pal = ctx["kind"], ctx["pal"]
+    three = len(uris) >= 3
+    grid_h = {"tall": 114, "square": 60}.get(k, 80)
+    ink = _ink(pal["primary"])
+    cells = "".join(f'<div class="pic" style="position:relative;{"grid-row:1 / span 2" if three and i == 0 else ""}">'
+                    f'<div class="ph" style="background-image:url(\'{u}\')"></div></div>' for i, u in enumerate(uris[:3]))
+    body = f"""
+<div class="ground" style="background:var(--primary)"></div>
+<div class="grid" style="position:absolute;left:0;right:0;top:0;height:{grid_h}rem;display:grid;gap:1.2rem;
+  grid-template-columns:{'1.3fr 1fr' if three else '1fr 1fr'};grid-template-rows:{'1fr 1fr' if three else '1fr'}">{cells}</div>
+<div class="grain"></div>{_offer(ctx, f"top:{_top(ctx)}rem;right:{M}rem")}
+<div class="frame" style="left:{M}rem;right:{M}rem;top:{grid_h + 3.5}rem;bottom:{_bottom(ctx)}rem">
+  <div class="row">{_words(ctx, 7.6, ink, sub_max=70)}{_sign(ctx, "light" if ink != "#ffffff" else "dark")}</div></div>"""
+    return body, COMMON + QS + f":root{{--ink:{ink}}}"
+
+
+def cover(ctx):
+    """A magazine cover: the photo edge to edge, the headline set large at the top."""
+    if not ctx["photo_uri"] or ctx["kind"] == "wide":
+        return photo(ctx)
+    k = ctx["kind"]
+    top_shade, low = _shade(ctx.get("photo_tone_top", .5)), _shade(ctx.get("photo_tone_bottom", .5)) * .5
+    t = _top(ctx)
+    head_h = {"tall": 70, "square": 46}.get(k, 56)
+    body = f"""
+<div class="pic" style="inset:0"><div class="ph" style="background-image:url('{ctx['photo_uri']}')"></div></div>
+<div class="ground" style="background:linear-gradient(180deg,rgba(0,0,0,{top_shade:.2f}) 0%,rgba(0,0,0,{top_shade * .55:.2f}) 32%,
+  rgba(0,0,0,0) 56%,rgba(0,0,0,0) 76%,rgba(0,0,0,{low:.2f}) 100%)"></div>
+<div class="grain"></div>
+<div class="frame" style="left:{M}rem;right:{M}rem;top:{t}rem;height:{head_h}rem;justify-content:flex-start">
+  {_words(ctx, 11, "#ffffff", sub_max=80, min_px=34, floor=60)}</div>
+<div class="row" style="position:absolute;left:{M}rem;right:{M}rem;bottom:{_bottom(ctx)}rem;align-items:flex-end">
+  <div>{_offer(ctx, "position:relative")}</div>{_sign(ctx, "photo")}</div>"""
+    return body, COMMON + QS + ".hl{text-shadow:0 .3rem 2.4rem rgba(0,0,0,.25)}"
+
+
+def panel(ctx):
+    """The photo above, the brand's color below: a calm split."""
+    if not ctx["photo_uri"] or ctx["kind"] == "wide":
+        return split(ctx)
+    k, pal = ctx["kind"], ctx["pal"]
+    ph_h = {"tall": 98, "square": 54}.get(k, 70)
+    ink = _ink(pal["primary"])
+    body = f"""
+<div class="ground" style="background:var(--primary)"></div>
+<div class="pic" style="left:0;right:0;top:0;height:{ph_h}rem"><div class="ph" style="background-image:url('{ctx['photo_uri']}')"></div></div>
+<div class="grain"></div>{_offer(ctx, f"top:{_top(ctx)}rem;right:{M}rem")}
+<div class="frame" style="left:{M}rem;right:{M}rem;top:{ph_h + 4.5}rem;bottom:{_bottom(ctx)}rem">
+  <div class="row">{_words(ctx, 8.4, ink, sub_max=80)}{_sign(ctx, "light" if ink != "#ffffff" else "dark")}</div></div>"""
+    return body, COMMON + QS + f":root{{--ink:{ink}}}"
+
+
+def poster(ctx):
+    """When there's no picture at all: the headline as the image, on the brand's color."""
+    k, pal = ctx["kind"], ctx["pal"]
+    if k == "wide":
+        return bold(ctx)
+    ink = _ink(pal["primary"])
+    t = _top(ctx)
+    body = f"""
+<div class="ground" style="background:var(--primary)"></div><div class="grain" style="opacity:.1"></div>
+<div class="frame" style="left:{M}rem;right:{M}rem;top:{t + 4}rem;bottom:{_bottom(ctx) + 18}rem;justify-content:flex-start">
+  {_words(ctx, 14, ink, sub_max=110, min_px=40, floor=72)}</div>
+<div class="row" style="position:absolute;left:{M}rem;right:{M}rem;bottom:{_bottom(ctx)}rem">
+  <div>{_offer(ctx, "position:relative")}</div>{_sign(ctx, "light" if ink != "#ffffff" else "dark")}</div>"""
+    return body, COMMON + QS + f":root{{--ink:{ink}}}.sub{{font-size:4.2rem}}"
 
 
 STYLES = {"bold": bold, "photo": photo, "split": split, "editorial": editorial, "gradient": gradient,
-          "brutal": brutal, "duotone": duotone, "minimal": minimal, "retro": retro, "frame": frame, "collage": collage,
-          "cover": cover}
-NEEDS_PHOTO = {"photo", "split", "duotone", "frame", "collage", "cover"}
+          "brutal": brutal, "duotone": duotone, "minimal": minimal, "retro": retro, "full": full, "frame": frame,
+          "collage": collage, "cover": cover, "panel": panel, "poster": poster}
+NEEDS_PHOTO = {"photo", "split", "duotone", "full", "frame", "collage", "cover", "panel"}

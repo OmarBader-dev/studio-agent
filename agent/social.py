@@ -84,8 +84,15 @@ def city_tag(city):
     return re.sub(r"[^A-Za-z]", "", (city or "").split(",")[0].title())
 
 
+def plain_dashes(text):
+    """Em dashes (and spaced en dashes) as pauses become commas, the way people type; 10–12 stays a range."""
+    t = re.sub(r"(?<=\w)–(?=\w)", "-", str(text or ""))
+    t = re.sub(r"[ \t]*[—–][ \t]*", ", ", t)
+    return re.sub(r",[ \t]*([,.!?;:])", r"\1", t)
+
+
 def safe_text(text):
-    out = text or ""
+    out = plain_dashes(text or "")
     for mark, plain in TRADEMARKS.items():
         out = re.sub(re.escape(mark), plain, out, flags=re.I)
     return out
@@ -349,7 +356,7 @@ def clean_post(p, kit, prof, day, time, source, weather_ok=False, week=None):
                     "icon": (p.get("icon") or "")[:4], "footer": kit.get("domain") or ""},
         "photo_subject": _clip(p.get("photo_subject"), 80),
         "caption": caption.strip(), "hashtags": [t for t in tags if t][:10],
-        "alt_text": _clip(p.get("alt_text") or f"{headline} — {kit.get('name')}", 200),
+        "alt_text": _clip(plain_dashes(p.get("alt_text")) or f"{headline}, {kit.get('name')}", 200),
         "reel_script": _clip(p.get("reel_script"), 500) if p.get("format") == "reel" else "", "source": source,
     }
 
